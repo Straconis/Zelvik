@@ -13,11 +13,15 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMainWindow,
+    QMessageBox,
     QPushButton,
     QSlider,
     QVBoxLayout,
     QWidget,
 )
+
+from config import has_environment_token
+from gui.token_dialog import TokenDialog
 
 
 class MainWindow(QMainWindow):
@@ -46,7 +50,7 @@ class MainWindow(QMainWindow):
 
         self.resize(
             850,
-            900,
+            940,
         )
 
         # =================================================
@@ -77,6 +81,10 @@ class MainWindow(QMainWindow):
             "Leave Channel"
         )
 
+        self.change_token_button = QPushButton(
+            "Change Discord Token"
+        )
+
         self.voice_status_label = QLabel(
             "Voice: Not connected"
         )
@@ -93,18 +101,14 @@ class MainWindow(QMainWindow):
             "Input Device"
         )
 
-        self.input_device_combo = (
-            QComboBox()
-        )
+        self.input_device_combo = QComboBox()
 
         self.input_volume_label = QLabel(
             "Volume: 100%"
         )
 
-        self.input_volume_slider = (
-            QSlider(
-                Qt.Horizontal
-            )
+        self.input_volume_slider = QSlider(
+            Qt.Horizontal
         )
 
         self.input_volume_slider.setRange(
@@ -112,12 +116,10 @@ class MainWindow(QMainWindow):
             200,
         )
 
-        saved_input_volume = (
-            self.settings.value(
-                "audio/input_volume",
-                100,
-                type=int,
-            )
+        saved_input_volume = self.settings.value(
+            "audio/input_volume",
+            100,
+            type=int,
         )
 
         self.input_volume_slider.setValue(
@@ -125,20 +127,15 @@ class MainWindow(QMainWindow):
         )
 
         self.input_volume_label.setText(
-            f"Volume: "
-            f"{saved_input_volume}%"
+            f"Volume: {saved_input_volume}%"
         )
 
-        self.start_input_button = (
-            QPushButton(
-                "Start Input"
-            )
+        self.start_input_button = QPushButton(
+            "Start Input"
         )
 
-        self.stop_input_button = (
-            QPushButton(
-                "Stop Input"
-            )
+        self.stop_input_button = QPushButton(
+            "Stop Input"
         )
 
         self.input_status_label = QLabel(
@@ -157,9 +154,7 @@ class MainWindow(QMainWindow):
             "YouTube URL"
         )
 
-        self.youtube_url_input = (
-            QLineEdit()
-        )
+        self.youtube_url_input = QLineEdit()
 
         self.youtube_url_input.setPlaceholderText(
             "https://www.youtube.com/watch?v=..."
@@ -169,9 +164,7 @@ class MainWindow(QMainWindow):
             "Start"
         )
 
-        self.youtube_start_input = (
-            QLineEdit()
-        )
+        self.youtube_start_input = QLineEdit()
 
         self.youtube_start_input.setPlaceholderText(
             "00:00"
@@ -181,36 +174,28 @@ class MainWindow(QMainWindow):
             "Stop"
         )
 
-        self.youtube_stop_input = (
-            QLineEdit()
-        )
+        self.youtube_stop_input = QLineEdit()
 
         self.youtube_stop_input.setPlaceholderText(
             "Optional"
         )
 
-        self.youtube_loop_checkbox = (
-            QCheckBox(
-                "Loop"
-            )
+        self.youtube_loop_checkbox = QCheckBox(
+            "Loop"
         )
 
-        saved_loop = (
-            self.settings.value(
-                "youtube/loop",
-                False,
-                type=bool,
-            )
+        saved_loop = self.settings.value(
+            "youtube/loop",
+            False,
+            type=bool,
         )
 
         self.youtube_loop_checkbox.setChecked(
             saved_loop
         )
 
-        self.youtube_volume_slider = (
-            QSlider(
-                Qt.Horizontal
-            )
+        self.youtube_volume_slider = QSlider(
+            Qt.Horizontal
         )
 
         self.youtube_volume_slider.setRange(
@@ -218,12 +203,10 @@ class MainWindow(QMainWindow):
             200,
         )
 
-        saved_youtube_volume = (
-            self.settings.value(
-                "youtube/volume",
-                100,
-                type=int,
-            )
+        saved_youtube_volume = self.settings.value(
+            "youtube/volume",
+            100,
+            type=int,
         )
 
         self.youtube_volume_slider.setValue(
@@ -231,20 +214,15 @@ class MainWindow(QMainWindow):
         )
 
         self.youtube_volume_label = QLabel(
-            f"Volume: "
-            f"{saved_youtube_volume}%"
+            f"Volume: {saved_youtube_volume}%"
         )
 
-        self.youtube_play_button = (
-            QPushButton(
-                "Play YouTube"
-            )
+        self.youtube_play_button = QPushButton(
+            "Play YouTube"
         )
 
-        self.youtube_stop_button = (
-            QPushButton(
-                "Stop YouTube"
-            )
+        self.youtube_stop_button = QPushButton(
+            "Stop YouTube"
         )
 
         self.youtube_status_label = QLabel(
@@ -263,26 +241,20 @@ class MainWindow(QMainWindow):
             "No sound selected"
         )
 
-        self.select_sound_button = (
-            QPushButton(
-                "Select Sound"
-            )
+        self.select_sound_button = QPushButton(
+            "Select Sound"
         )
 
         self.play_button = QPushButton(
             "Play Sound"
         )
 
-        self.stop_local_button = (
-            QPushButton(
-                "Stop Local Audio"
-            )
+        self.stop_local_button = QPushButton(
+            "Stop Local Audio"
         )
 
-        self.local_volume_slider = (
-            QSlider(
-                Qt.Horizontal
-            )
+        self.local_volume_slider = QSlider(
+            Qt.Horizontal
         )
 
         self.local_volume_slider.setRange(
@@ -290,12 +262,10 @@ class MainWindow(QMainWindow):
             200,
         )
 
-        saved_local_volume = (
-            self.settings.value(
-                "local/volume",
-                100,
-                type=int,
-            )
+        saved_local_volume = self.settings.value(
+            "local/volume",
+            100,
+            type=int,
         )
 
         self.local_volume_slider.setValue(
@@ -303,8 +273,7 @@ class MainWindow(QMainWindow):
         )
 
         self.local_volume_label = QLabel(
-            f"Volume: "
-            f"{saved_local_volume}%"
+            f"Volume: {saved_local_volume}%"
         )
 
         self.local_status_label = QLabel(
@@ -319,10 +288,8 @@ class MainWindow(QMainWindow):
             "Master Output"
         )
 
-        self.master_volume_slider = (
-            QSlider(
-                Qt.Horizontal
-            )
+        self.master_volume_slider = QSlider(
+            Qt.Horizontal
         )
 
         self.master_volume_slider.setRange(
@@ -330,12 +297,10 @@ class MainWindow(QMainWindow):
             150,
         )
 
-        saved_master_volume = (
-            self.settings.value(
-                "audio/master_volume",
-                100,
-                type=int,
-            )
+        saved_master_volume = self.settings.value(
+            "audio/master_volume",
+            100,
+            type=int,
         )
 
         self.master_volume_slider.setValue(
@@ -343,8 +308,7 @@ class MainWindow(QMainWindow):
         )
 
         self.master_volume_label = QLabel(
-            f"Master: "
-            f"{saved_master_volume}%"
+            f"Master: {saved_master_volume}%"
         )
 
         self.stop_all_button = QPushButton(
@@ -369,9 +333,15 @@ class MainWindow(QMainWindow):
             self.leave_button
         )
 
-        input_volume_layout = (
-            QHBoxLayout()
+        discord_settings_buttons = QHBoxLayout()
+
+        discord_settings_buttons.addWidget(
+            self.change_token_button
         )
+
+        discord_settings_buttons.addStretch()
+
+        input_volume_layout = QHBoxLayout()
 
         input_volume_layout.addWidget(
             self.input_volume_label
@@ -413,9 +383,7 @@ class MainWindow(QMainWindow):
             self.youtube_loop_checkbox
         )
 
-        youtube_volume_layout = (
-            QHBoxLayout()
-        )
+        youtube_volume_layout = QHBoxLayout()
 
         youtube_volume_layout.addWidget(
             self.youtube_volume_label
@@ -435,9 +403,7 @@ class MainWindow(QMainWindow):
             self.youtube_stop_button
         )
 
-        local_volume_layout = (
-            QHBoxLayout()
-        )
+        local_volume_layout = QHBoxLayout()
 
         local_volume_layout.addWidget(
             self.local_volume_label
@@ -461,9 +427,7 @@ class MainWindow(QMainWindow):
             self.stop_local_button
         )
 
-        master_volume_layout = (
-            QHBoxLayout()
-        )
+        master_volume_layout = QHBoxLayout()
 
         master_volume_layout.addWidget(
             self.master_volume_label
@@ -513,6 +477,10 @@ class MainWindow(QMainWindow):
 
         layout.addLayout(
             discord_buttons
+        )
+
+        layout.addLayout(
+            discord_settings_buttons
         )
 
         layout.addWidget(
@@ -647,6 +615,10 @@ class MainWindow(QMainWindow):
             self.leave_channel
         )
 
+        self.change_token_button.clicked.connect(
+            self.change_discord_token
+        )
+
         self.input_device_combo.currentIndexChanged.connect(
             self.save_audio_device
         )
@@ -739,6 +711,21 @@ class MainWindow(QMainWindow):
             f"{self.discord.client.user}"
         )
 
+        guild = None
+
+        guild_id = self.guild_combo.currentData()
+
+        if guild_id is not None:
+            guild = self.discord.client.get_guild(
+                guild_id
+            )
+
+        if guild is not None and guild.voice_client:
+            self.voice_status_label.setText(
+                "Voice: Connected to "
+                f"{guild.voice_client.channel.name}"
+            )
+
         if not self.guilds_loaded:
             self.load_guilds()
 
@@ -771,10 +758,7 @@ class MainWindow(QMainWindow):
                 guild["id"],
             )
 
-            if (
-                str(guild["id"])
-                == saved_guild
-            ):
+            if str(guild["id"]) == saved_guild:
                 saved_index = (
                     self.guild_combo.count()
                     - 1
@@ -806,6 +790,7 @@ class MainWindow(QMainWindow):
             self.channel_combo.blockSignals(
                 False
             )
+
             return
 
         self.settings.setValue(
@@ -906,6 +891,45 @@ class MainWindow(QMainWindow):
 
         self.local_status_label.setText(
             "Local Audio: Stopped"
+        )
+
+    def change_discord_token(self):
+        if has_environment_token():
+            QMessageBox.warning(
+                self,
+                "Token Controlled by .env",
+                (
+                    "Dark Between Audio is currently "
+                    "using DISCORD_TOKEN from your .env "
+                    "file or environment.\n\n"
+                    "A token saved through this dialog "
+                    "would not override that value.\n\n"
+                    "Remove or update DISCORD_TOKEN in "
+                    ".env before using the saved Windows "
+                    "Credential Manager token."
+                ),
+            )
+
+            return
+
+        dialog = TokenDialog(
+            self
+        )
+
+        result = dialog.exec()
+
+        if result != TokenDialog.Accepted:
+            return
+
+        QMessageBox.information(
+            self,
+            "Discord Token Changed",
+            (
+                "The new Discord bot token has been saved "
+                "to Windows Credential Manager.\n\n"
+                "Restart Dark Between Audio to connect "
+                "using the new token."
+            ),
         )
 
     # =================================================
@@ -1129,12 +1153,14 @@ class MainWindow(QMainWindow):
             self.youtube_status_label.setText(
                 "YouTube: Join a server first."
             )
+
             return
 
         if not url:
             self.youtube_status_label.setText(
                 "YouTube: Enter a URL."
             )
+
             return
 
         start_text = (
@@ -1145,16 +1171,12 @@ class MainWindow(QMainWindow):
             self.youtube_stop_input.text()
         )
 
-        start_time = (
-            self.parse_timestamp(
-                start_text
-            )
+        start_time = self.parse_timestamp(
+            start_text
         )
 
-        stop_time = (
-            self.parse_timestamp(
-                stop_text
-            )
+        stop_time = self.parse_timestamp(
+            stop_text
         )
 
         if (
@@ -1164,6 +1186,7 @@ class MainWindow(QMainWindow):
             self.youtube_status_label.setText(
                 "YouTube: Invalid start time."
             )
+
             return
 
         if (
@@ -1173,6 +1196,7 @@ class MainWindow(QMainWindow):
             self.youtube_status_label.setText(
                 "YouTube: Invalid stop time."
             )
+
             return
 
         if (
@@ -1184,6 +1208,7 @@ class MainWindow(QMainWindow):
                 "YouTube: Stop must be "
                 "after start."
             )
+
             return
 
         volume = (
@@ -1264,6 +1289,7 @@ class MainWindow(QMainWindow):
                 "Local Audio: "
                 "Select a file first."
             )
+
             return
 
         if guild_id is None:
@@ -1385,6 +1411,7 @@ class MainWindow(QMainWindow):
     ):
         if self.shutting_down:
             event.accept()
+
             return
 
         self.shutting_down = True
