@@ -4,15 +4,13 @@ import threading
 import discord
 
 
-# Discord expects 20 ms of:
-# 48,000 Hz
-# stereo
-# 16-bit PCM
+# Discord expects 20 ms frames:
 #
-# 48000 samples/sec
-# * 0.020 sec
-# * 2 channels
-# * 2 bytes/sample
+# 48,000 samples/sec
+# 0.020 sec
+# 2 channels
+# 2 bytes/sample
+#
 # = 3840 bytes
 FRAME_SIZE = 3840
 
@@ -20,7 +18,13 @@ FRAME_SIZE = 3840
 class AudioMixer(discord.AudioSource):
     def __init__(self):
         self.sources = []
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
+
+        self.master_volume = 1.0
+
+    # -------------------------------------------------
+    # Sources
+    # -------------------------------------------------
 
     def add_source(self, source):
         source.start()
@@ -29,10 +33,19 @@ class AudioMixer(discord.AudioSource):
             self.sources.append(source)
 
     def remove_source(self, source):
+        if source is None:
+            return
+
         with self.lock:
             if source in self.sources:
-                source.stop()
                 self.sources.remove(source)
+
+        try:
+            source.stop()
+        except Exception as error:
+            print(
+                f"Source stop error: {error}"
+            )
 
     def stop_all(self):
         with self.lock:
@@ -40,63 +53,127 @@ class AudioMixer(discord.AudioSource):
             self.sources.clear()
 
         for source in sources:
-            source.stop()
+            try:
+                source.stop()
+            except Exception as error:
+                print(
+                    f"Source stop error: {error}"
+                )
+
+    # -------------------------------------------------
+    # Master volume
+    # -------------------------------------------------
+
+    def set_master_volume(self, volume):
+        self.master_volume = max(
+            0.0,
+            float(volume),
+        )
+
+    # -------------------------------------------------
+    # Discord AudioSource
+    # -------------------------------------------------
 
     def read(self):
-        # Take a snapshot so we're not holding the mixer
-        # lock while reading from FFmpeg processes.
         with self.lock:
-            active_sources = list(self.sources)
+            active_sources = list(
+                self.sources
+            )
 
-        # Discord still needs audio frames even when nothing
-        # is currently making sound.
+        # Discord still needs valid PCM frames
+        # when nothing is playing.
         if not active_sources:
-            return b"\x00" * FRAME_SIZE
+            return (
+                b"\x00" * FRAME_SIZE
+            )
 
-        mixed = b"\x00" * FRAME_SIZE
+        mixed = (
+            b"\x00" * FRAME_SIZE
+        )
+
         finished_sources = []
 
         for source in active_sources:
-            data = source.read(FRAME_SIZE)
-
-            if not data:
-                finished_sources.append(source)
-                continue
-
-            # FFmpeg pipes are allowed to return less data than
-            # requested. Pad short reads with silence so every
-            # buffer passed into audioop.add() is exactly the
-            # same length.
-            if len(data) < FRAME_SIZE:
-                data += b"\x00" * (
-                    FRAME_SIZE - len(data)
+            try:
+                data = source.read(
+                    FRAME_SIZE
                 )
 
-            # Defensive measure: if we somehow receive more
-            # than one frame, only mix the current frame.
-            elif len(data) > FRAME_SIZE:
-                data = data[:FRAME_SIZE]
+            except Exception as error:
+                print(
+                    f"Audio source read error: "
+                    f"{error}"
+                )
 
-            # Apply this source's individual volume.
+                finished_sources.append(
+                    source
+                )
+
+                continue
+
+            if not data:
+                finished_sources.append(
+                    source
+                )
+
+                continue
+
+            # Make every source exactly one
+            # Discord frame long.
+            if len(data) < FRAME_SIZE:
+                data += (
+                    b"\x00"
+                    * (
+                        FRAME_SIZE
+                        - len(data)
+                    )
+                )
+
+            elif len(data) > FRAME_SIZE:
+                data = data[
+                    :FRAME_SIZE
+                ]
+
+            # Per-source volume
+            source_volume = getattr(
+                source,
+                "volume",
+                1.0,
+            )
+
             data = audioop.mul(
                 data,
                 2,
-                source.volume,
+                source_volume,
             )
 
-            # Mix it into the final Discord frame.
+            # Mix source into final frame.
             mixed = audioop.add(
                 mixed,
                 data,
                 2,
             )
 
-        # Remove sounds that reached EOF.
-        if finished_sources:
+        # Clean up completed sources.
+        for source in finished_sources:
             with self.lock:
-                for source in finished_sources:
-                    if source in self.sources:
-                        self.sources.remove(source)
+                if source in self.sources:
+                    self.sources.remove(
+                        source
+                    )
+
+            try:
+                source.stop()
+            except Exception:
+                pass
+
+        # Master volume
+        if self.master_volume != 1.0:
+            mixed = audioop.mul(
+                mixed,
+                2,
+                self.master_volume,
+            )
 
         return mixed
 
