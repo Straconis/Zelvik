@@ -5,13 +5,13 @@ from dotenv import load_dotenv
 
 
 # ---------------------------------------------------------
-# Dark Between Audio configuration
+# Zelvik configuration
 # ---------------------------------------------------------
 
 APP_NAME = "DarkBetweenAudio"
 
 TOKEN_SERVICE = (
-    "Dark Between Audio"
+    "Zelvik"
 )
 
 TOKEN_USERNAME = (

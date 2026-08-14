@@ -25,7 +25,7 @@ class AudioSource:
     def _subprocess_creation_flags(self):
         """
         Prevent FFmpeg from opening its own console window
-        when Dark Between Audio is packaged as a Windows
+        when Zelvik is packaged as a Windows
         --windowed executable.
         """
 

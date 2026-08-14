@@ -251,7 +251,7 @@ def main():
     )
 
     app.setApplicationName(
-        "Dark Between Audio"
+        "Zelvik"
     )
 
     app.setOrganizationName(
@@ -269,7 +269,7 @@ def main():
     icon_path = resource_path(
         os.path.join(
             "assets",
-            "dark-between-audio.ico",
+            "zelvik.ico",
         )
     )
 

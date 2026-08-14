@@ -66,7 +66,7 @@ class YouTubeSource:
     def _subprocess_creation_flags(self):
         """
         Prevent FFmpeg from opening a command window when
-        Dark Between Audio is packaged with PyInstaller's
+        Zelvik is packaged with PyInstaller's
         --windowed option.
         """
 

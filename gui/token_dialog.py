@@ -20,7 +20,7 @@ class TokenDialog(QDialog):
         self.saved_token = None
 
         self.setWindowTitle(
-            "Dark Between Audio - Discord Bot Setup"
+            "Zelvik - Discord Bot Setup"
         )
 
         self.setMinimumWidth(
@@ -205,7 +205,7 @@ class TokenDialog(QDialog):
                 self,
                 "Unable to Save Token",
                 (
-                    "Dark Between Audio could not save "
+                    "Zelvik could not save "
                     "the Discord bot token.\n\n"
                     f"{error}"
                 ),

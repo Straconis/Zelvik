@@ -45,7 +45,7 @@ class MainWindow(QMainWindow):
         self.shutting_down = False
 
         self.setWindowTitle(
-            "Dark Between Audio v1.0"
+            "Zelvik v1.0"
         )
 
         self.resize(
@@ -768,7 +768,7 @@ class MainWindow(QMainWindow):
             self,
             "Voice Channel Required",
             (
-                "Dark Between Audio is not connected "
+                "Zelvik is not connected "
                 "to a Discord voice channel.\n\n"
                 "Select a voice channel and click "
                 "\"Join Channel\" before starting audio."
@@ -1058,7 +1058,7 @@ class MainWindow(QMainWindow):
                 self,
                 "Token Controlled by .env",
                 (
-                    "Dark Between Audio is currently "
+                    "Zelvik is currently "
                     "using DISCORD_TOKEN from your .env "
                     "file or environment.\n\n"
                     "A token saved through this dialog "
@@ -1086,7 +1086,7 @@ class MainWindow(QMainWindow):
             (
                 "The new Discord bot token has been saved "
                 "to Windows Credential Manager.\n\n"
-                "Restart Dark Between Audio to connect "
+                "Restart Zelvik to connect "
                 "using the new token."
             ),
         )
