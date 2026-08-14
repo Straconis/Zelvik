@@ -27,6 +27,7 @@ class YouTubeSource:
         loop=False,
         start_time=None,
         stop_time=None,
+        cookies_file=None,
     ):
         self.youtube_url = youtube_url
 
@@ -35,6 +36,13 @@ class YouTubeSource:
 
         self.start_time = start_time
         self.stop_time = stop_time
+        self.cookies_file = (
+            os.path.abspath(cookies_file)
+            if cookies_file
+            else None
+        )
+
+        self.auth_in_use = False
 
         # Retries after the initial attempt.
         self.max_retries = 3
@@ -58,6 +66,12 @@ class YouTubeSource:
         )
 
         self.last_error = None
+
+        self.error_kind = None
+        self.error_message = None
+        self.error_details = None
+        self.error_retryable = False
+        self.error_reported = False
 
     # -------------------------------------------------
     # Windows subprocess handling
@@ -88,6 +102,142 @@ class YouTubeSource:
 
         print(text)
 
+    def _classify_error(
+        self,
+        details,
+        default_retryable=False,
+    ):
+        text = (
+            details or ""
+        ).lower()
+
+        authentication_terms = (
+            "sign in",
+            "login required",
+            "log in",
+            "age-restricted",
+            "age restricted",
+            "confirm your age",
+            "authentication required",
+            "cookies",
+        )
+
+        unavailable_terms = (
+            "video unavailable",
+            "private video",
+            "video is private",
+            "removed by the uploader",
+            "has been removed",
+            "not available",
+        )
+
+        temporary_terms = (
+            "timed out",
+            "timeout",
+            "connection reset",
+            "connection refused",
+            "temporary failure",
+            "temporarily unavailable",
+            "network is unreachable",
+            "http error 429",
+            "too many requests",
+            "http error 500",
+            "http error 502",
+            "http error 503",
+            "http error 504",
+        )
+
+        if any(
+            term in text
+            for term in authentication_terms
+        ):
+            return (
+                "authentication",
+                "This video requires YouTube authentication.",
+                False,
+            )
+
+        if any(
+            term in text
+            for term in unavailable_terms
+        ):
+            return (
+                "unavailable",
+                "This YouTube video is unavailable.",
+                False,
+            )
+
+        if (
+            "403" in text
+            or "forbidden" in text
+            or "access denied" in text
+        ):
+            return (
+                "http_403",
+                "YouTube denied access to the media stream.",
+                True,
+            )
+
+        if any(
+            term in text
+            for term in temporary_terms
+        ):
+            return (
+                "network",
+                (
+                    "A temporary network error interrupted "
+                    "YouTube playback."
+                ),
+                True,
+            )
+
+        return (
+            "playback",
+            "Zelvik could not play this YouTube video.",
+            default_retryable,
+        )
+
+    def _set_error(
+        self,
+        kind,
+        message,
+        details="",
+        retryable=False,
+    ):
+        with self.state_lock:
+            self.last_error = (
+                details or message
+            )
+
+            self.error_kind = kind
+            self.error_message = message
+            self.error_details = (
+                details or message
+            )
+            self.error_retryable = retryable
+            self.error_reported = False
+
+        self._set_status(
+            f"YouTube: Failed — {message}"
+        )
+
+    def get_error_state(self):
+        with self.state_lock:
+            if not self.error_message:
+                return None
+
+            return {
+                "kind": self.error_kind,
+                "message": self.error_message,
+                "details": self.error_details,
+                "retryable": self.error_retryable,
+                "reported": self.error_reported,
+            }
+
+    def mark_error_reported(self):
+        with self.state_lock:
+            self.error_reported = True
+
     # -------------------------------------------------
     # Start
     # -------------------------------------------------
@@ -103,6 +253,12 @@ class YouTubeSource:
             self.finished = False
             self.started = True
             self.last_error = None
+            self.error_kind = None
+            self.error_message = None
+            self.error_details = None
+            self.error_retryable = False
+            self.error_reported = False
+            self.auth_in_use = False
 
         self.stop_event.clear()
 
@@ -118,21 +274,159 @@ class YouTubeSource:
         self.worker_thread.start()
 
     # -------------------------------------------------
+    # YouTube cookie-file authentication
+    # -------------------------------------------------
+
+    @staticmethod
+    def check_cookie_auth(
+        cookies_file,
+    ):
+        if not cookies_file:
+            return {
+                "ok": True,
+                "authenticated": False,
+                "message": "Authentication is disabled.",
+                "details": "",
+            }
+
+        path = os.path.abspath(
+            cookies_file
+        )
+
+        if not os.path.isfile(path):
+            return {
+                "ok": False,
+                "authenticated": False,
+                "message": "The selected cookies file does not exist.",
+                "details": path,
+            }
+
+        try:
+            with open(
+                path,
+                "r",
+                encoding="utf-8",
+                errors="replace",
+            ) as handle:
+                lines = handle.readlines()
+
+        except Exception as error:
+            return {
+                "ok": False,
+                "authenticated": False,
+                "message": "Zelvik could not read the selected cookies file.",
+                "details": str(error),
+            }
+
+        youtube_cookie_count = 0
+        auth_cookie_names = {
+            "SID",
+            "HSID",
+            "SSID",
+            "APISID",
+            "SAPISID",
+            "__Secure-1PAPISID",
+            "__Secure-3PAPISID",
+            "__Secure-1PSID",
+            "__Secure-3PSID",
+        }
+        found_auth_names = set()
+
+        for raw_line in lines:
+            line = raw_line.strip()
+
+            if (
+                not line
+                or line.startswith("#")
+            ):
+                continue
+
+            parts = line.split("\t")
+
+            if len(parts) < 7:
+                continue
+
+            domain = parts[0].lower()
+            name = parts[5]
+
+            if (
+                "youtube.com" in domain
+                or "google.com" in domain
+            ):
+                youtube_cookie_count += 1
+
+                if name in auth_cookie_names:
+                    found_auth_names.add(
+                        name
+                    )
+
+        if found_auth_names:
+            return {
+                "ok": True,
+                "authenticated": True,
+                "message": "Signed-in YouTube cookies were found.",
+                "details": (
+                    f"Found {youtube_cookie_count} YouTube/Google cookies "
+                    f"and {len(found_auth_names)} recognized sign-in cookies."
+                ),
+            }
+
+        if youtube_cookie_count:
+            return {
+                "ok": True,
+                "authenticated": False,
+                "message": (
+                    "YouTube cookies were found, but Zelvik could not "
+                    "confirm a signed-in session."
+                ),
+                "details": (
+                    f"Found {youtube_cookie_count} YouTube/Google cookies "
+                    "but no recognized sign-in cookies."
+                ),
+            }
+
+        return {
+            "ok": True,
+            "authenticated": False,
+            "message": "No YouTube or Google cookies were found in this file.",
+            "details": (
+                "The file is readable, but it does not appear to contain "
+                "YouTube authentication cookies."
+            ),
+        }
+
+    # -------------------------------------------------
     # yt-dlp resolution
     # -------------------------------------------------
 
-    def _resolve_stream(self):
-        self._set_status(
-            "YouTube: Resolving stream..."
-        )
+    def _resolve_stream(
+        self,
+        use_auth=False,
+    ):
+        if use_auth:
+            self._set_status(
+                "YouTube: Resolving stream with authentication..."
+            )
+        else:
+            self._set_status(
+                "YouTube: Resolving stream..."
+            )
 
         ydl_options = {
-            "format": "bestaudio/best",
+            "format": "bestaudio*/best",
             "quiet": True,
             "no_warnings": True,
             "noplaylist": True,
             "cachedir": False,
         }
+
+        if (
+            use_auth
+            and self.cookies_file
+        ):
+            ydl_options[
+                "cookiefile"
+            ] = self.cookies_file
 
         with yt_dlp.YoutubeDL(
             ydl_options
@@ -390,6 +684,7 @@ class YouTubeSource:
 
     def _worker(self):
         retry_count = 0
+        use_auth = False
 
         while not self.stop_event.is_set():
             try:
@@ -397,15 +692,61 @@ class YouTubeSource:
                     stream_url,
                     headers,
                     title,
-                ) = self._resolve_stream()
+                ) = self._resolve_stream(
+                    use_auth=use_auth
+                )
 
             except Exception as error:
                 self.last_error = str(
                     error
                 )
 
+                (
+                    kind,
+                    message,
+                    retryable,
+                ) = self._classify_error(
+                    str(error),
+                    default_retryable=True,
+                )
+
                 if (
-                    retry_count
+                    kind == "authentication"
+                    and not use_auth
+                    and self.cookies_file
+                    and os.path.isfile(
+                        self.cookies_file
+                    )
+                ):
+                    use_auth = True
+                    self.auth_in_use = True
+                    retry_count = 0
+
+                    self._set_status(
+                        "YouTube: Authentication required — "
+                        "retrying with saved cookies..."
+                    )
+
+                    if self._wait_or_stop(
+                        0.5
+                    ):
+                        break
+
+                    continue
+
+                if (
+                    kind == "authentication"
+                    and not self.cookies_file
+                ):
+                    message = (
+                        "This video requires YouTube authentication. "
+                        "Import cookies.txt in Zelvik and try again."
+                    )
+                    retryable = False
+
+                if (
+                    retryable
+                    and retry_count
                     < self.max_retries
                 ):
                     retry_count += 1
@@ -424,8 +765,11 @@ class YouTubeSource:
 
                     continue
 
-                self._set_status(
-                    "YouTube: Failed to resolve stream."
+                self._set_error(
+                    kind=kind,
+                    message=message,
+                    details=str(error),
+                    retryable=retryable,
                 )
 
                 print(
@@ -440,9 +784,18 @@ class YouTubeSource:
             if self.stop_event.is_set():
                 break
 
-            self._set_status(
-                f"YouTube: Playing — {title}"
-            )
+            if use_auth:
+                self.auth_in_use = True
+
+                self._set_status(
+                    f"YouTube: Playing (authenticated) — {title}"
+                )
+            else:
+                self.auth_in_use = False
+
+                self._set_status(
+                    f"YouTube: Playing — {title}"
+                )
 
             try:
                 self._start_ffmpeg(
@@ -455,8 +808,14 @@ class YouTubeSource:
                     error
                 )
 
-                self._set_status(
-                    "YouTube: FFmpeg failed to start."
+                self._set_error(
+                    kind="ffmpeg",
+                    message=(
+                        "FFmpeg could not start "
+                        "YouTube playback."
+                    ),
+                    details=str(error),
+                    retryable=False,
                 )
 
                 print(
@@ -561,9 +920,14 @@ class YouTubeSource:
 
                     continue
 
-                self._set_status(
-                    "YouTube: Failed — "
-                    "403 after 3 retries."
+                self._set_error(
+                    kind="http_403",
+                    message=(
+                        "YouTube denied access to the media "
+                        "stream after multiple retries."
+                    ),
+                    details=error_text.strip(),
+                    retryable=True,
                 )
 
                 print(
@@ -594,8 +958,19 @@ class YouTubeSource:
                     error_text.strip()
                 )
 
-                self._set_status(
-                    "YouTube: Playback failed."
+                (
+                    kind,
+                    message,
+                    retryable,
+                ) = self._classify_error(
+                    error_text
+                )
+
+                self._set_error(
+                    kind=kind,
+                    message=message,
+                    details=error_text.strip(),
+                    retryable=retryable,
                 )
 
                 print(

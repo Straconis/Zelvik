@@ -22,3 +22,16 @@ dist/
 .idea/
 .DS_Store
 Thumbs.db
+# yt-dlp / temporary media output
+*.mkv
+*.webm
+*.mp4
+*.m4a
+*.part
+*.ytdl
+
+# YouTube authentication cookies
+cookies.txt
+*.cookies.txt
+youtube-cookies.txt
+cookies/

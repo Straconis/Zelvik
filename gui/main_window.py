@@ -1,3 +1,6 @@
+import os
+import shutil
+
 from PySide6.QtCore import (
     QSettings,
     Qt,
@@ -14,7 +17,9 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMainWindow,
     QMessageBox,
+    QPlainTextEdit,
     QPushButton,
+    QScrollArea,
     QSlider,
     QVBoxLayout,
     QWidget,
@@ -43,6 +48,7 @@ class MainWindow(QMainWindow):
         self.guilds_loaded = False
         self.audio_devices_loaded = False
         self.shutting_down = False
+        self.last_youtube_status = None
 
         self.setWindowTitle(
             "Zelvik v1.0"
@@ -50,7 +56,12 @@ class MainWindow(QMainWindow):
 
         self.resize(
             850,
-            940,
+            760,
+        )
+
+        self.setMinimumSize(
+            720,
+            560,
         )
 
         # =================================================
@@ -226,6 +237,96 @@ class MainWindow(QMainWindow):
         )
 
         self.youtube_status_label.setWordWrap(
+            True
+        )
+
+        self.youtube_activity_label = QLabel(
+            "YouTube Activity"
+        )
+
+        self.youtube_activity_log = QPlainTextEdit()
+
+        self.youtube_activity_log.setReadOnly(
+            True
+        )
+
+        self.youtube_activity_log.setMaximumBlockCount(
+            50
+        )
+
+        self.youtube_activity_log.setMinimumHeight(
+            90
+        )
+
+        self.youtube_activity_log.setMaximumHeight(
+            140
+        )
+
+        self.youtube_activity_log.setPlaceholderText(
+            "YouTube playback activity will appear here."
+        )
+
+        self.youtube_auth_label = QLabel(
+            "YouTube Authentication"
+        )
+
+        self.youtube_auth_file_label = QLabel(
+            "No cookies.txt selected"
+        )
+
+        self.youtube_auth_file_label.setWordWrap(
+            True
+        )
+
+        self.youtube_auth_select_button = QPushButton(
+            "Import cookies.txt"
+        )
+
+        self.youtube_auth_check_button = QPushButton(
+            "Check Authentication"
+        )
+
+        self.youtube_auth_disable_button = QPushButton(
+            "Disable Authentication"
+        )
+
+        self.youtube_cookies_origin = self.settings.value(
+            "youtube/cookies_origin",
+            "",
+            type=str,
+        )
+
+        self.youtube_cookies_file = (
+            self._managed_youtube_cookies_path()
+        )
+
+        if os.path.isfile(
+            self.youtube_cookies_file
+        ):
+            origin_text = (
+                self.youtube_cookies_origin
+                or "Unknown (imported before origin tracking)"
+            )
+
+            self.youtube_auth_file_label.setText(
+                "Original file: "
+                f"{origin_text}\n"
+                "Managed copy: "
+                f"{self.youtube_cookies_file}"
+            )
+
+            self.youtube_auth_status_label = QLabel(
+                "Authentication: Available — not currently in use"
+            )
+
+        else:
+            self.youtube_cookies_file = ""
+
+            self.youtube_auth_status_label = QLabel(
+                "Authentication: Disabled"
+            )
+
+        self.youtube_auth_status_label.setWordWrap(
             True
         )
 
@@ -407,6 +508,20 @@ class MainWindow(QMainWindow):
             self.youtube_stop_button
         )
 
+        youtube_auth_buttons = QHBoxLayout()
+
+        youtube_auth_buttons.addWidget(
+            self.youtube_auth_select_button
+        )
+
+        youtube_auth_buttons.addWidget(
+            self.youtube_auth_check_button
+        )
+
+        youtube_auth_buttons.addWidget(
+            self.youtube_auth_disable_button
+        )
+
         local_volume_layout = QHBoxLayout()
 
         local_volume_layout.addWidget(
@@ -553,6 +668,30 @@ class MainWindow(QMainWindow):
             self.youtube_status_label
         )
 
+        layout.addWidget(
+            self.youtube_activity_label
+        )
+
+        layout.addWidget(
+            self.youtube_activity_log
+        )
+
+        layout.addWidget(
+            self.youtube_auth_label
+        )
+
+        layout.addWidget(
+            self.youtube_auth_file_label
+        )
+
+        layout.addLayout(
+            youtube_auth_buttons
+        )
+
+        layout.addWidget(
+            self.youtube_auth_status_label
+        )
+
         layout.addSpacing(
             20
         )
@@ -597,14 +736,49 @@ class MainWindow(QMainWindow):
             bottom_buttons
         )
 
-        container = QWidget()
+        content_widget = QWidget()
 
-        container.setLayout(
+        content_widget.setLayout(
             layout
         )
 
+        scroll_area = QScrollArea(
+            self
+        )
+
+        scroll_area.setWidgetResizable(
+            True
+        )
+
+        scroll_area.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarAlwaysOff
+        )
+
+        scroll_area.setWidget(
+            content_widget
+        )
+
+        root_layout = QVBoxLayout()
+
+        root_layout.setContentsMargins(
+            0,
+            0,
+            0,
+            0,
+        )
+
+        root_layout.addWidget(
+            scroll_area
+        )
+
+        root_container = QWidget()
+
+        root_container.setLayout(
+            root_layout
+        )
+
         self.setCentralWidget(
-            container
+            root_container
         )
 
         # =================================================
@@ -661,6 +835,18 @@ class MainWindow(QMainWindow):
 
         self.youtube_stop_button.clicked.connect(
             self.stop_youtube
+        )
+
+        self.youtube_auth_select_button.clicked.connect(
+            self.select_youtube_cookies
+        )
+
+        self.youtube_auth_check_button.clicked.connect(
+            self.check_youtube_authentication
+        )
+
+        self.youtube_auth_disable_button.clicked.connect(
+            self.disable_youtube_authentication
         )
 
         self.select_sound_button.clicked.connect(
@@ -874,6 +1060,101 @@ class MainWindow(QMainWindow):
             self.youtube_status_label.setText(
                 status
             )
+
+            if (
+                status
+                != self.last_youtube_status
+            ):
+                self.last_youtube_status = status
+
+                self.youtube_activity_log.appendPlainText(
+                    status
+                )
+
+                scroll_bar = (
+                    self.youtube_activity_log
+                    .verticalScrollBar()
+                )
+
+                scroll_bar.setValue(
+                    scroll_bar.maximum()
+                )
+
+        get_error_state = getattr(
+            source,
+            "get_error_state",
+            None,
+        )
+
+        if get_error_state is None:
+            return
+
+        error_state = (
+            get_error_state()
+        )
+
+        if not error_state:
+            return
+
+        if error_state.get(
+            "reported",
+            False,
+        ):
+            return
+
+        mark_error_reported = getattr(
+            source,
+            "mark_error_reported",
+            None,
+        )
+
+        if mark_error_reported is not None:
+            mark_error_reported()
+
+        message_box = QMessageBox(
+            self
+        )
+
+        message_box.setIcon(
+            QMessageBox.Critical
+        )
+
+        message_box.setWindowTitle(
+            "YouTube Playback Failed"
+        )
+
+        message_box.setText(
+            error_state.get(
+                "message",
+                "Zelvik could not play this YouTube video.",
+            )
+        )
+
+        if error_state.get(
+            "retryable",
+            False,
+        ):
+            message_box.setInformativeText(
+                "This error may be temporary. "
+                "Trying the video again may succeed."
+            )
+
+        else:
+            message_box.setInformativeText(
+                "Retrying without changing anything "
+                "is unlikely to resolve this error."
+            )
+
+        details = error_state.get(
+            "details"
+        )
+
+        if details:
+            message_box.setDetailedText(
+                str(details)
+            )
+
+        message_box.exec()
 
     # =================================================
     # Discord server / channel
@@ -1247,6 +1528,31 @@ class MainWindow(QMainWindow):
     # YouTube
     # =================================================
 
+    def _managed_youtube_cookies_path(
+        self,
+    ):
+        local_app_data = os.environ.get(
+            "LOCALAPPDATA"
+        )
+
+        if not local_app_data:
+            local_app_data = os.path.join(
+                os.path.expanduser("~"),
+                "AppData",
+                "Local",
+            )
+
+        auth_dir = os.path.join(
+            local_app_data,
+            "Zelvik",
+            "auth",
+        )
+
+        return os.path.join(
+            auth_dir,
+            "youtube_cookies.txt",
+        )
+
     def save_youtube_loop(
         self,
         checked,
@@ -1398,6 +1704,14 @@ class MainWindow(QMainWindow):
             "YouTube: Starting..."
         )
 
+        self.last_youtube_status = (
+            "YouTube: Starting..."
+        )
+
+        self.youtube_activity_log.appendPlainText(
+            "YouTube: Starting..."
+        )
+
         self.discord.play_youtube(
             guild_id,
             url,
@@ -1405,6 +1719,289 @@ class MainWindow(QMainWindow):
             loop=loop,
             start_time=start_time,
             stop_time=stop_time,
+            cookies_file=(
+                self.youtube_cookies_file
+                if (
+                    self.youtube_cookies_file
+                    and os.path.isfile(
+                        self.youtube_cookies_file
+                    )
+                )
+                else None
+            ),
+        )
+
+    def select_youtube_cookies(
+        self,
+    ):
+        filename, _ = (
+            QFileDialog.getOpenFileName(
+                self,
+                "Import YouTube cookies.txt",
+                "",
+                (
+                    "Cookie Files (*.txt);;"
+                    "All Files (*)"
+                ),
+            )
+        )
+
+        if not filename:
+            return
+
+        managed_path = (
+            self._managed_youtube_cookies_path()
+        )
+
+        try:
+            os.makedirs(
+                os.path.dirname(
+                    managed_path
+                ),
+                exist_ok=True,
+            )
+
+            shutil.copy2(
+                filename,
+                managed_path,
+            )
+
+        except Exception as error:
+            message_box = QMessageBox(
+                self
+            )
+
+            message_box.setIcon(
+                QMessageBox.Critical
+            )
+
+            message_box.setWindowTitle(
+                "YouTube Authentication"
+            )
+
+            message_box.setText(
+                "Zelvik could not import cookies.txt."
+            )
+
+            message_box.setDetailedText(
+                str(error)
+            )
+
+            message_box.exec()
+
+            self.youtube_activity_log.appendPlainText(
+                "YouTube: Authentication cookies verified and available."
+            )
+
+            return
+
+        self.youtube_cookies_file = (
+            managed_path
+        )
+
+        self.youtube_cookies_origin = (
+            os.path.abspath(
+                filename
+            )
+        )
+
+        self.settings.setValue(
+            "youtube/cookies_file",
+            managed_path,
+        )
+
+        self.settings.setValue(
+            "youtube/cookies_origin",
+            self.youtube_cookies_origin,
+        )
+
+        self.youtube_auth_file_label.setText(
+            "Original file: "
+            f"{self.youtube_cookies_origin}\n"
+            "Managed copy: "
+            f"{managed_path}"
+        )
+
+        self.youtube_auth_status_label.setText(
+            "Authentication: Available — checking..."
+        )
+
+        self.youtube_activity_log.appendPlainText(
+            "YouTube: Imported authentication cookies "
+            "into Zelvik-managed storage."
+        )
+
+        self.check_youtube_authentication()
+
+    def check_youtube_authentication(
+        self,
+    ):
+        if not self.youtube_cookies_file:
+            self.youtube_auth_status_label.setText(
+                "Authentication: Disabled"
+            )
+
+            return
+
+        self.youtube_auth_status_label.setText(
+            "Authentication: Checking cookies.txt..."
+        )
+
+        QApplication.processEvents()
+
+        result = (
+            self.discord.check_youtube_auth(
+                self.youtube_cookies_file
+            )
+        )
+
+        if result.get(
+            "authenticated",
+            False,
+        ):
+            self.youtube_auth_status_label.setText(
+                "Authentication: Available"
+            )
+
+            message_box = QMessageBox(
+                self
+            )
+
+            message_box.setIcon(
+                QMessageBox.Information
+            )
+
+            message_box.setWindowTitle(
+                "YouTube Authentication"
+            )
+
+            message_box.setText(
+                "YouTube authentication is ready."
+            )
+
+            message_box.setInformativeText(
+                "Zelvik imported signed-in YouTube cookies "
+                "into its managed authentication storage."
+            )
+
+            details = result.get(
+                "details"
+            )
+
+            if details:
+                message_box.setDetailedText(
+                    str(details)
+                )
+
+            message_box.exec()
+
+            return
+
+        self.youtube_auth_status_label.setText(
+            "Authentication: Cookies loaded, sign-in not confirmed"
+        )
+
+        message_box = QMessageBox(
+            self
+        )
+
+        if result.get(
+            "ok",
+            False,
+        ):
+            message_box.setIcon(
+                QMessageBox.Warning
+            )
+        else:
+            message_box.setIcon(
+                QMessageBox.Critical
+            )
+
+        message_box.setWindowTitle(
+            "YouTube Authentication"
+        )
+
+        message_box.setText(
+            result.get(
+                "message",
+                "YouTube authentication check failed.",
+            )
+        )
+
+        details = result.get(
+            "details"
+        )
+
+        if details:
+            message_box.setDetailedText(
+                str(details)
+            )
+
+        message_box.exec()
+
+    def disable_youtube_authentication(
+        self,
+    ):
+        managed_path = (
+            self._managed_youtube_cookies_path()
+        )
+
+        try:
+            if os.path.isfile(
+                managed_path
+            ):
+                os.remove(
+                    managed_path
+                )
+
+        except Exception as error:
+            message_box = QMessageBox(
+                self
+            )
+
+            message_box.setIcon(
+                QMessageBox.Warning
+            )
+
+            message_box.setWindowTitle(
+                "YouTube Authentication"
+            )
+
+            message_box.setText(
+                "Authentication was disabled, but Zelvik "
+                "could not delete the managed cookies file."
+            )
+
+            message_box.setDetailedText(
+                str(error)
+            )
+
+            message_box.exec()
+
+        self.youtube_cookies_file = ""
+        self.youtube_cookies_origin = ""
+
+        self.settings.setValue(
+            "youtube/cookies_file",
+            "",
+        )
+
+        self.settings.setValue(
+            "youtube/cookies_origin",
+            "",
+        )
+
+        self.youtube_auth_file_label.setText(
+            "No managed cookies imported"
+        )
+
+        self.youtube_auth_status_label.setText(
+            "Authentication: Disabled"
+        )
+
+        self.youtube_activity_log.appendPlainText(
+            "YouTube: Authentication disabled and "
+            "managed cookies removed."
         )
 
     def stop_youtube(self):
@@ -1420,6 +2017,14 @@ class MainWindow(QMainWindow):
         )
 
         self.youtube_status_label.setText(
+            "YouTube: Stopped"
+        )
+
+        self.last_youtube_status = (
+            "YouTube: Stopped"
+        )
+
+        self.youtube_activity_log.appendPlainText(
             "YouTube: Stopped"
         )
 

@@ -615,6 +615,7 @@ class DiscordClient:
         loop=False,
         start_time=None,
         stop_time=None,
+        cookies_file=None,
     ):
         print(
             "Starting YouTube playback..."
@@ -647,6 +648,7 @@ class DiscordClient:
             loop=loop,
             start_time=start_time,
             stop_time=stop_time,
+            cookies_file=cookies_file,
         )
 
         mixer.add_source(
@@ -670,6 +672,7 @@ class DiscordClient:
         loop=False,
         start_time=None,
         stop_time=None,
+        cookies_file=None,
     ):
         return self._submit_coroutine(
             self._play_youtube(
@@ -679,8 +682,17 @@ class DiscordClient:
                 loop,
                 start_time,
                 stop_time,
+                cookies_file,
             ),
             "YouTube playback",
+        )
+
+    def check_youtube_auth(
+        self,
+        cookies_file,
+    ):
+        return YouTubeSource.check_cookie_auth(
+            cookies_file
         )
 
     def stop_youtube(
