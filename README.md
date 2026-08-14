@@ -301,9 +301,7 @@ Click:
 Save & Connect
 ```
 
-Dark Between Audio stores the token using Windows Credential Manager.
-
-You do not need to create a `.env` file when using the normal Windows EXE.
+Dark Between Audio stores the token securely using Windows Credential Manager.
 
 On future launches, Dark Between Audio will retrieve the saved token automatically.
 
@@ -771,35 +769,33 @@ python main.py
 
 # Developer Token Configuration
 
-Developers may use the same Windows Credential Manager setup as EXE users.
+Developers running Dark Between Audio from source use the same token setup as packaged EXE users.
 
-Dark Between Audio also supports:
+On the first launch, Dark Between Audio asks for the Discord bot token and stores it securely using **Windows Credential Manager**.
 
-```text
-DISCORD_TOKEN
+Run:
+
+```powershell
+python main.py
 ```
 
-from a `.env` file or environment variable.
-
-For example:
+Enter the bot token when prompted and click:
 
 ```text
-DISCORD_TOKEN=your_bot_token_here
+Save & Connect
 ```
 
-If `DISCORD_TOKEN` is present in the environment or `.env`, it takes priority over the token stored in Windows Credential Manager.
+On future launches, Dark Between Audio retrieves the saved token automatically.
 
-Never commit `.env` files containing tokens to source control.
-
-Your `.gitignore` should include:
+If the bot token is reset or you want to use a different bot, use:
 
 ```text
-.env
-.venv/
-__pycache__/
-build/
-dist/
+Change Discord Token
 ```
+
+inside Dark Between Audio, save the replacement token, and restart the application.
+
+Never hard-code a Discord bot token into the source code or commit a working token to source control.
 
 ---
 
