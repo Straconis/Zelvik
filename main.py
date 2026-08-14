@@ -1,5 +1,8 @@
+import os
 import sys
 
+import discord
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
@@ -9,6 +12,118 @@ from bot.discord_client import DiscordClient
 from config import get_discord_token
 from gui.main_window import MainWindow
 from gui.token_dialog import TokenDialog
+
+
+# ---------------------------------------------------------
+# Resource path helper
+# ---------------------------------------------------------
+
+def resource_path(relative_path):
+    """
+    Return the absolute path to a resource.
+
+    Works both from source and from a PyInstaller bundle.
+    """
+
+    if hasattr(sys, "_MEIPASS"):
+        base_path = sys._MEIPASS
+    else:
+        base_path = os.path.abspath(
+            os.path.dirname(__file__)
+        )
+
+    return os.path.join(
+        base_path,
+        relative_path,
+    )
+
+
+# ---------------------------------------------------------
+# Load Discord Opus library
+# ---------------------------------------------------------
+
+def load_opus():
+    """
+    Load the Opus DLL required by discord.py for PCM audio.
+
+    When running from source, discord.py can normally find
+    its bundled DLL.
+
+    When running from a PyInstaller executable, we bundle
+    the x64 Opus DLL ourselves and explicitly load it.
+    """
+
+    if discord.opus.is_loaded():
+        return
+
+    possible_paths = [
+        # PyInstaller bundled location
+        resource_path(
+            os.path.join(
+                "discord",
+                "bin",
+                "libopus-0.x64.dll",
+            )
+        ),
+
+        # Development/source location
+        resource_path(
+            os.path.join(
+                ".venv",
+                "Lib",
+                "site-packages",
+                "discord",
+                "bin",
+                "libopus-0.x64.dll",
+            )
+        ),
+    ]
+
+    for opus_path in possible_paths:
+        if not os.path.exists(opus_path):
+            continue
+
+        try:
+            discord.opus.load_opus(
+                opus_path
+            )
+
+            print(
+                f"Loaded Opus library: "
+                f"{opus_path}"
+            )
+
+            return
+
+        except Exception as error:
+            print(
+                f"Unable to load Opus from "
+                f"{opus_path}: {error}"
+            )
+
+    # Last attempt: let discord.py / the operating system
+    # try finding the library normally.
+    try:
+        discord.opus.load_opus(
+            "libopus-0.x64.dll"
+        )
+
+        print(
+            "Loaded Opus library using "
+            "system DLL search."
+        )
+
+        return
+
+    except Exception as error:
+        print(
+            "WARNING: Discord Opus library "
+            "could not be loaded."
+        )
+
+        print(
+            f"Opus error: {error}"
+        )
 
 
 # ---------------------------------------------------------
@@ -127,8 +242,10 @@ QMessageBox QLabel {
 # ---------------------------------------------------------
 
 def main():
-    # Qt must exist before we can show the first-run
-    # Discord token dialog.
+    # Opus must be loaded before Discord tries to play
+    # our PCM mixer.
+    load_opus()
+
     app = QApplication(
         sys.argv
     )
@@ -146,20 +263,35 @@ def main():
     )
 
     # -----------------------------------------------------
+    # Application icon
+    # -----------------------------------------------------
+
+    icon_path = resource_path(
+        os.path.join(
+            "assets",
+            "dark-between-audio.ico",
+        )
+    )
+
+    if os.path.exists(
+        icon_path
+    ):
+        app.setWindowIcon(
+            QIcon(icon_path)
+        )
+
+    # -----------------------------------------------------
     # Load Discord token
     # -----------------------------------------------------
 
     token = get_discord_token()
 
-    # No .env token and no saved Windows credential.
-    # Show the first-run setup dialog.
     if not token:
         token_dialog = TokenDialog()
 
         result = token_dialog.exec()
 
         if result != QDialog.Accepted:
-            # User cancelled setup.
             return 0
 
         token = token_dialog.saved_token

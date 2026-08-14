@@ -1,5 +1,6 @@
 import asyncio
 import threading
+import traceback
 
 import discord
 import sounddevice as sd
@@ -23,15 +24,13 @@ class DiscordClient:
         self.loop = None
         self.thread = None
 
-        self.ready_event = (
-            threading.Event()
-        )
+        self.ready_event = threading.Event()
 
         # One mixer per Discord server.
         self.mixers = {}
 
-        # Source handles allow individual
-        # sources to be stopped/controlled.
+        # Source handles allow individual sources
+        # to be stopped/controlled.
         #
         # guild_id:
         # {
@@ -63,9 +62,7 @@ class DiscordClient:
         self.thread.start()
 
     def _run_bot(self):
-        self.loop = (
-            asyncio.new_event_loop()
-        )
+        self.loop = asyncio.new_event_loop()
 
         asyncio.set_event_loop(
             self.loop
@@ -76,6 +73,19 @@ class DiscordClient:
                 self.client.start(
                     self.token
                 )
+            )
+
+        except Exception as error:
+            print(
+                "Discord client FAILED: "
+                f"{type(error).__name__}: "
+                f"{error}"
+            )
+
+            traceback.print_exception(
+                type(error),
+                error,
+                error.__traceback__,
             )
 
         finally:
@@ -90,6 +100,81 @@ class DiscordClient:
         )
 
     # -------------------------------------------------
+    # Async operation helper
+    # -------------------------------------------------
+
+    def _submit_coroutine(
+        self,
+        coroutine,
+        operation_name,
+    ):
+        """
+        Submit a coroutine to Discord's event loop and
+        report any exception raised by it.
+
+        Previously these Futures were returned to the GUI
+        but their exceptions were never inspected. That
+        allowed playback failures to appear completely
+        silent, especially in packaged PyInstaller builds.
+        """
+
+        if self.loop is None:
+            print(
+                f"{operation_name} FAILED: "
+                "Discord event loop is not running."
+            )
+
+            try:
+                coroutine.close()
+            except Exception:
+                pass
+
+            return None
+
+        if self.loop.is_closed():
+            print(
+                f"{operation_name} FAILED: "
+                "Discord event loop is closed."
+            )
+
+            try:
+                coroutine.close()
+            except Exception:
+                pass
+
+            return None
+
+        future = asyncio.run_coroutine_threadsafe(
+            coroutine,
+            self.loop,
+        )
+
+        def report_result(
+            completed_future,
+        ):
+            try:
+                completed_future.result()
+
+            except Exception as error:
+                print(
+                    f"{operation_name} FAILED: "
+                    f"{type(error).__name__}: "
+                    f"{error}"
+                )
+
+                traceback.print_exception(
+                    type(error),
+                    error,
+                    error.__traceback__,
+                )
+
+        future.add_done_callback(
+            report_result
+        )
+
+        return future
+
+    # -------------------------------------------------
     # Servers / channels
     # -------------------------------------------------
 
@@ -102,8 +187,7 @@ class DiscordClient:
                 "id": guild.id,
                 "name": guild.name,
             }
-            for guild
-            in self.client.guilds
+            for guild in self.client.guilds
         ]
 
     def get_voice_channels(
@@ -122,8 +206,7 @@ class DiscordClient:
                 "id": channel.id,
                 "name": channel.name,
             }
-            for channel
-            in guild.voice_channels
+            for channel in guild.voice_channels
         ]
 
     # -------------------------------------------------
@@ -133,10 +216,9 @@ class DiscordClient:
     def get_audio_input_devices(self):
         devices = sd.query_devices()
 
-        # Prefer Windows WASAPI because it gives us
-        # a cleaner modern Windows device path.
-        #
-        # Fall back to MME / DirectSound if needed.
+        # Prefer modern Windows audio backends while
+        # avoiding duplicate representations of the
+        # same physical/virtual device.
         priorities = {
             "Windows WASAPI": 0,
             "MME": 1,
@@ -156,11 +238,10 @@ class DiscordClient:
                 continue
 
             try:
-                host_api = (
-                    sd.query_hostapis(
-                        device["hostapi"]
-                    )["name"]
-                )
+                host_api = sd.query_hostapis(
+                    device["hostapi"]
+                )["name"]
+
             except Exception:
                 host_api = "Unknown"
 
@@ -168,12 +249,16 @@ class DiscordClient:
                 {
                     "id": device_id,
                     "name": device["name"],
-                    "channels": device[
-                        "max_input_channels"
-                    ],
-                    "samplerate": device[
-                        "default_samplerate"
-                    ],
+                    "channels": (
+                        device[
+                            "max_input_channels"
+                        ]
+                    ),
+                    "samplerate": (
+                        device[
+                            "default_samplerate"
+                        ]
+                    ),
                     "host_api": host_api,
                     "priority": priorities.get(
                         host_api,
@@ -189,8 +274,6 @@ class DiscordClient:
             )
         )
 
-        # Remove duplicate versions of the same
-        # physical/virtual device.
         deduplicated = {}
 
         for device in candidates:
@@ -230,10 +313,8 @@ class DiscordClient:
         self,
         channel_id,
     ):
-        channel = (
-            self.client.get_channel(
-                channel_id
-            )
+        channel = self.client.get_channel(
+            channel_id
         )
 
         if channel is None:
@@ -268,16 +349,11 @@ class DiscordClient:
         self,
         channel_id,
     ):
-        if self.loop is None:
-            return None
-
-        return (
-            asyncio.run_coroutine_threadsafe(
-                self._join_channel(
-                    channel_id
-                ),
-                self.loop,
-            )
+        return self._submit_coroutine(
+            self._join_channel(
+                channel_id
+            ),
+            "Join voice channel",
         )
 
     async def _leave_channel(
@@ -318,16 +394,11 @@ class DiscordClient:
         self,
         guild_id,
     ):
-        if self.loop is None:
-            return None
-
-        return (
-            asyncio.run_coroutine_threadsafe(
-                self._leave_channel(
-                    guild_id
-                ),
-                self.loop,
-            )
+        return self._submit_coroutine(
+            self._leave_channel(
+                guild_id
+            ),
+            "Leave voice channel",
         )
 
     # -------------------------------------------------
@@ -395,6 +466,10 @@ class DiscordClient:
         )
 
         if not voice_client.is_playing():
+            print(
+                "Starting Discord audio mixer..."
+            )
+
             voice_client.play(
                 mixer,
                 after=lambda error: print(
@@ -407,6 +482,10 @@ class DiscordClient:
                 ),
             )
 
+            print(
+                "Discord audio mixer started."
+            )
+
     # -------------------------------------------------
     # External audio input
     # -------------------------------------------------
@@ -417,6 +496,10 @@ class DiscordClient:
         device_id,
         volume=1.0,
     ):
+        print(
+            "Starting external audio input..."
+        )
+
         await self._start_mixer(
             guild_id
         )
@@ -429,9 +512,9 @@ class DiscordClient:
             guild_id
         )
 
-        # Only allow one external input
-        # source at a time.
-        old_source = state["input"]
+        old_source = state[
+            "input"
+        ]
 
         if old_source:
             mixer.remove_source(
@@ -462,18 +545,13 @@ class DiscordClient:
         device_id,
         volume=1.0,
     ):
-        if self.loop is None:
-            return None
-
-        return (
-            asyncio.run_coroutine_threadsafe(
-                self._start_audio_input(
-                    guild_id,
-                    device_id,
-                    volume,
-                ),
-                self.loop,
-            )
+        return self._submit_coroutine(
+            self._start_audio_input(
+                guild_id,
+                device_id,
+                volume,
+            ),
+            "External audio input",
         )
 
     def stop_audio_input(
@@ -484,7 +562,9 @@ class DiscordClient:
             guild_id
         )
 
-        source = state["input"]
+        source = state[
+            "input"
+        ]
 
         if source is None:
             return
@@ -513,7 +593,9 @@ class DiscordClient:
             guild_id
         )
 
-        source = state["input"]
+        source = state[
+            "input"
+        ]
 
         if source:
             source.volume = max(
@@ -534,6 +616,10 @@ class DiscordClient:
         start_time=None,
         stop_time=None,
     ):
+        print(
+            "Starting YouTube playback..."
+        )
+
         await self._start_mixer(
             guild_id
         )
@@ -546,7 +632,6 @@ class DiscordClient:
             guild_id
         )
 
-        # One YouTube stream at a time.
         old_source = state[
             "youtube"
         ]
@@ -586,21 +671,16 @@ class DiscordClient:
         start_time=None,
         stop_time=None,
     ):
-        if self.loop is None:
-            return None
-
-        return (
-            asyncio.run_coroutine_threadsafe(
-                self._play_youtube(
-                    guild_id,
-                    youtube_url,
-                    volume,
-                    loop,
-                    start_time,
-                    stop_time,
-                ),
-                self.loop,
-            )
+        return self._submit_coroutine(
+            self._play_youtube(
+                guild_id,
+                youtube_url,
+                volume,
+                loop,
+                start_time,
+                stop_time,
+            ),
+            "YouTube playback",
         )
 
     def stop_youtube(
@@ -663,6 +743,11 @@ class DiscordClient:
         volume=1.0,
         loop=False,
     ):
+        print(
+            f"Starting local audio: "
+            f"{filename}"
+        )
+
         await self._start_mixer(
             guild_id
         )
@@ -703,19 +788,14 @@ class DiscordClient:
         volume=1.0,
         loop=False,
     ):
-        if self.loop is None:
-            return None
-
-        return (
-            asyncio.run_coroutine_threadsafe(
-                self._play_mixed_audio(
-                    guild_id,
-                    filename,
-                    volume,
-                    loop,
-                ),
-                self.loop,
-            )
+        return self._submit_coroutine(
+            self._play_mixed_audio(
+                guild_id,
+                filename,
+                volume,
+                loop,
+            ),
+            "Local audio playback",
         )
 
     def stop_local_audio(
@@ -832,6 +912,7 @@ class DiscordClient:
         ):
             try:
                 mixer.stop_all()
+
             except Exception as error:
                 print(
                     "Mixer shutdown error: "
@@ -870,11 +951,9 @@ class DiscordClient:
         if self.loop.is_closed():
             return
 
-        future = (
-            asyncio.run_coroutine_threadsafe(
-                self._shutdown(),
-                self.loop,
-            )
+        future = asyncio.run_coroutine_threadsafe(
+            self._shutdown(),
+            self.loop,
         )
 
         try:
