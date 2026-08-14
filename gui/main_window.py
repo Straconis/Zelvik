@@ -53,7 +53,7 @@ class MainWindow(QMainWindow):
         self.last_youtube_status = None
 
         self.setWindowTitle(
-            "Zelvik v1.0"
+            "Zelvik v1.1.0"
         )
 
         self.resize(
