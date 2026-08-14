@@ -1,13 +1,16 @@
-from PySide6.QtCore import QSettings, QTimer
+from PySide6.QtCore import QSettings, Qt, QTimer
 from PySide6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QComboBox,
     QFileDialog,
+    QHBoxLayout,
     QLabel,
+    QLineEdit,
     QMainWindow,
     QPushButton,
+    QSlider,
     QVBoxLayout,
-    QHBoxLayout,
     QWidget,
 )
 
@@ -29,26 +32,18 @@ class MainWindow(QMainWindow):
         self.shutting_down = False
 
         self.setWindowTitle("Dark Between Audio")
-        self.resize(760, 620)
+        self.resize(840, 820)
 
         # -------------------------------------------------
-        # Discord status
+        # Discord
         # -------------------------------------------------
 
         self.status_label = QLabel(
             "Discord: Connecting..."
         )
 
-        # -------------------------------------------------
-        # Server selection
-        # -------------------------------------------------
-
         self.guild_label = QLabel("Server")
         self.guild_combo = QComboBox()
-
-        # -------------------------------------------------
-        # Voice channel selection
-        # -------------------------------------------------
 
         self.channel_label = QLabel(
             "Voice Channel"
@@ -87,10 +82,89 @@ class MainWindow(QMainWindow):
         )
 
         # -------------------------------------------------
+        # YouTube
+        # -------------------------------------------------
+
+        self.youtube_section_label = QLabel(
+            "YouTube"
+        )
+
+        self.youtube_url_label = QLabel(
+            "YouTube URL"
+        )
+
+        self.youtube_url_input = QLineEdit()
+
+        self.youtube_url_input.setPlaceholderText(
+            "https://www.youtube.com/watch?v=..."
+        )
+
+        self.youtube_start_label = QLabel(
+            "Start"
+        )
+
+        self.youtube_start_input = QLineEdit()
+
+        self.youtube_start_input.setPlaceholderText(
+            "00:00"
+        )
+
+        self.youtube_stop_label = QLabel(
+            "Stop"
+        )
+
+        self.youtube_stop_input = QLineEdit()
+
+        self.youtube_stop_input.setPlaceholderText(
+            "Optional"
+        )
+
+        self.youtube_loop_checkbox = QCheckBox(
+            "Loop"
+        )
+
+        self.youtube_volume_label = QLabel(
+            "Volume: 100%"
+        )
+
+        self.youtube_volume_slider = QSlider(
+            Qt.Horizontal
+        )
+
+        self.youtube_volume_slider.setMinimum(0)
+        self.youtube_volume_slider.setMaximum(200)
+
+        saved_youtube_volume = self.settings.value(
+            "youtube/volume",
+            100,
+            type=int,
+        )
+
+        self.youtube_volume_slider.setValue(
+            saved_youtube_volume
+        )
+
+        self.youtube_volume_label.setText(
+            f"Volume: {saved_youtube_volume}%"
+        )
+
+        self.youtube_play_button = QPushButton(
+            "Play YouTube"
+        )
+
+        self.youtube_stop_button = QPushButton(
+            "Stop All Audio"
+        )
+
+        self.youtube_status_label = QLabel(
+            ""
+        )
+
+        # -------------------------------------------------
         # Local file player
         # -------------------------------------------------
 
-        self.soundboard_label = QLabel(
+        self.local_section_label = QLabel(
             "Local File Playback"
         )
 
@@ -142,6 +216,48 @@ class MainWindow(QMainWindow):
             self.stop_input_button
         )
 
+        youtube_time_layout = QHBoxLayout()
+
+        youtube_time_layout.addWidget(
+            self.youtube_start_label
+        )
+
+        youtube_time_layout.addWidget(
+            self.youtube_start_input
+        )
+
+        youtube_time_layout.addWidget(
+            self.youtube_stop_label
+        )
+
+        youtube_time_layout.addWidget(
+            self.youtube_stop_input
+        )
+
+        youtube_time_layout.addWidget(
+            self.youtube_loop_checkbox
+        )
+
+        youtube_volume_layout = QHBoxLayout()
+
+        youtube_volume_layout.addWidget(
+            self.youtube_volume_label
+        )
+
+        youtube_volume_layout.addWidget(
+            self.youtube_volume_slider
+        )
+
+        youtube_buttons = QHBoxLayout()
+
+        youtube_buttons.addWidget(
+            self.youtube_play_button
+        )
+
+        youtube_buttons.addWidget(
+            self.youtube_stop_button
+        )
+
         file_buttons = QHBoxLayout()
 
         file_buttons.addWidget(
@@ -163,6 +279,10 @@ class MainWindow(QMainWindow):
         exit_layout.addWidget(
             self.exit_button
         )
+
+        # -------------------------------------------------
+        # Main layout
+        # -------------------------------------------------
 
         layout = QVBoxLayout()
 
@@ -212,9 +332,40 @@ class MainWindow(QMainWindow):
 
         layout.addSpacing(20)
 
+        # YouTube
+        layout.addWidget(
+            self.youtube_section_label
+        )
+
+        layout.addWidget(
+            self.youtube_url_label
+        )
+
+        layout.addWidget(
+            self.youtube_url_input
+        )
+
+        layout.addLayout(
+            youtube_time_layout
+        )
+
+        layout.addLayout(
+            youtube_volume_layout
+        )
+
+        layout.addLayout(
+            youtube_buttons
+        )
+
+        layout.addWidget(
+            self.youtube_status_label
+        )
+
+        layout.addSpacing(20)
+
         # Local file playback
         layout.addWidget(
-            self.soundboard_label
+            self.local_section_label
         )
 
         layout.addWidget(
@@ -227,6 +378,7 @@ class MainWindow(QMainWindow):
 
         layout.addStretch()
 
+        # Exit
         layout.addLayout(
             exit_layout
         )
@@ -269,6 +421,18 @@ class MainWindow(QMainWindow):
             self.save_audio_device
         )
 
+        self.youtube_volume_slider.valueChanged.connect(
+            self.youtube_volume_changed
+        )
+
+        self.youtube_play_button.clicked.connect(
+            self.play_youtube
+        )
+
+        self.youtube_stop_button.clicked.connect(
+            self.stop_all_audio
+        )
+
         self.select_sound_button.clicked.connect(
             self.select_sound
         )
@@ -298,7 +462,7 @@ class MainWindow(QMainWindow):
         self.timer.start(500)
 
     # -------------------------------------------------
-    # Discord connection/status
+    # Discord status
     # -------------------------------------------------
 
     def check_discord(self):
@@ -322,15 +486,13 @@ class MainWindow(QMainWindow):
             self.audio_devices_loaded = True
 
     # -------------------------------------------------
-    # Discord server/channel loading
+    # Discord server/channel
     # -------------------------------------------------
 
     def load_guilds(self):
         self.guild_combo.clear()
 
-        guilds = self.discord.get_guilds()
-
-        for guild in guilds:
+        for guild in self.discord.get_guilds():
             self.guild_combo.addItem(
                 guild["name"],
                 guild["id"],
@@ -358,10 +520,6 @@ class MainWindow(QMainWindow):
                 channel["id"],
             )
 
-    # -------------------------------------------------
-    # Discord voice controls
-    # -------------------------------------------------
-
     def join_channel(self):
         channel_id = (
             self.channel_combo.currentData()
@@ -387,7 +545,7 @@ class MainWindow(QMainWindow):
         )
 
     # -------------------------------------------------
-    # External audio devices
+    # External audio
     # -------------------------------------------------
 
     def load_audio_devices(self):
@@ -461,13 +619,9 @@ class MainWindow(QMainWindow):
             self.input_device_combo.currentData()
         )
 
-        if guild_id is None:
+        if guild_id is None or device_id is None:
             return
 
-        if device_id is None:
-            return
-
-        # Save the selected input before starting.
         self.save_audio_device()
 
         self.discord.start_audio_input(
@@ -477,7 +631,153 @@ class MainWindow(QMainWindow):
         )
 
     # -------------------------------------------------
-    # Local file player
+    # YouTube
+    # -------------------------------------------------
+
+    def youtube_volume_changed(
+        self,
+        value,
+    ):
+        self.youtube_volume_label.setText(
+            f"Volume: {value}%"
+        )
+
+        self.settings.setValue(
+            "youtube/volume",
+            value,
+        )
+
+        self.settings.sync()
+
+    def parse_timestamp(
+        self,
+        value,
+    ):
+        value = value.strip()
+
+        if not value:
+            return None
+
+        try:
+            parts = value.split(":")
+
+            if len(parts) == 1:
+                return int(parts[0])
+
+            if len(parts) == 2:
+                minutes = int(parts[0])
+                seconds = int(parts[1])
+
+                return (
+                    minutes * 60
+                    + seconds
+                )
+
+            if len(parts) == 3:
+                hours = int(parts[0])
+                minutes = int(parts[1])
+                seconds = int(parts[2])
+
+                return (
+                    hours * 3600
+                    + minutes * 60
+                    + seconds
+                )
+
+        except ValueError:
+            return None
+
+        return None
+
+    def play_youtube(self):
+        guild_id = (
+            self.guild_combo.currentData()
+        )
+
+        if guild_id is None:
+            self.youtube_status_label.setText(
+                "Select a Discord server first."
+            )
+            return
+
+        youtube_url = (
+            self.youtube_url_input.text().strip()
+        )
+
+        if not youtube_url:
+            self.youtube_status_label.setText(
+                "Enter a YouTube URL."
+            )
+            return
+
+        start_text = (
+            self.youtube_start_input.text()
+        )
+
+        stop_text = (
+            self.youtube_stop_input.text()
+        )
+
+        start_time = self.parse_timestamp(
+            start_text
+        )
+
+        stop_time = self.parse_timestamp(
+            stop_text
+        )
+
+        if (
+            start_text.strip()
+            and start_time is None
+        ):
+            self.youtube_status_label.setText(
+                "Invalid start timestamp."
+            )
+            return
+
+        if (
+            stop_text.strip()
+            and stop_time is None
+        ):
+            self.youtube_status_label.setText(
+                "Invalid stop timestamp."
+            )
+            return
+
+        if (
+            start_time is not None
+            and stop_time is not None
+            and stop_time <= start_time
+        ):
+            self.youtube_status_label.setText(
+                "Stop time must be after start time."
+            )
+            return
+
+        loop = (
+            self.youtube_loop_checkbox.isChecked()
+        )
+
+        volume = (
+            self.youtube_volume_slider.value()
+            / 100.0
+        )
+
+        self.youtube_status_label.setText(
+            "Starting YouTube playback..."
+        )
+
+        self.discord.play_youtube(
+            guild_id,
+            youtube_url,
+            volume=volume,
+            loop=loop,
+            start_time=start_time,
+            stop_time=stop_time,
+        )
+
+    # -------------------------------------------------
+    # Local files
     # -------------------------------------------------
 
     def select_sound(self):
@@ -525,7 +825,7 @@ class MainWindow(QMainWindow):
         )
 
     # -------------------------------------------------
-    # Stop all mixer audio
+    # Stop all
     # -------------------------------------------------
 
     def stop_all_audio(self):
@@ -538,6 +838,10 @@ class MainWindow(QMainWindow):
 
         self.discord.stop_all_audio(
             guild_id
+        )
+
+        self.youtube_status_label.setText(
+            "Stopped."
         )
 
     # -------------------------------------------------
@@ -555,42 +859,6 @@ class MainWindow(QMainWindow):
 
         self.status_label.setText(
             "Discord: Shutting down..."
-        )
-
-        self.join_button.setEnabled(
-            False
-        )
-
-        self.leave_button.setEnabled(
-            False
-        )
-
-        self.start_input_button.setEnabled(
-            False
-        )
-
-        self.stop_input_button.setEnabled(
-            False
-        )
-
-        self.input_device_combo.setEnabled(
-            False
-        )
-
-        self.select_sound_button.setEnabled(
-            False
-        )
-
-        self.play_button.setEnabled(
-            False
-        )
-
-        self.stop_button.setEnabled(
-            False
-        )
-
-        self.exit_button.setEnabled(
-            False
         )
 
         QApplication.processEvents()

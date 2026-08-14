@@ -7,6 +7,7 @@ import sounddevice as sd
 from audio.mixer import AudioMixer
 from audio.source import AudioSource
 from audio.input_source import InputDeviceSource
+from audio.youtube_source import YouTubeSource
 
 
 class DiscordClient:
@@ -50,6 +51,10 @@ class DiscordClient:
     def wait_until_ready(self, timeout=10):
         return self.ready_event.wait(timeout)
 
+    # -------------------------------------------------
+    # Discord server/channel discovery
+    # -------------------------------------------------
+
     def get_guilds(self):
         if not self.client.is_ready():
             return []
@@ -76,6 +81,10 @@ class DiscordClient:
             for channel in guild.voice_channels
         ]
 
+    # -------------------------------------------------
+    # Windows audio-device discovery
+    # -------------------------------------------------
+
     def get_audio_input_devices(self):
         devices = sd.query_devices()
 
@@ -87,18 +96,28 @@ class DiscordClient:
                     {
                         "id": device_id,
                         "name": device["name"],
-                        "channels": device["max_input_channels"],
-                        "samplerate": device["default_samplerate"],
+                        "channels": device[
+                            "max_input_channels"
+                        ],
+                        "samplerate": device[
+                            "default_samplerate"
+                        ],
                     }
                 )
 
         return inputs
 
+    # -------------------------------------------------
+    # Discord voice join/leave
+    # -------------------------------------------------
+
     async def _join_channel(self, channel_id):
         channel = self.client.get_channel(channel_id)
 
         if channel is None:
-            raise RuntimeError("Voice channel not found.")
+            raise RuntimeError(
+                "Voice channel not found."
+            )
 
         guild = channel.guild
         voice_client = guild.voice_client
@@ -109,7 +128,10 @@ class DiscordClient:
         else:
             await channel.connect()
 
-        print(f"Joined voice channel: {channel.name}")
+        print(
+            f"Joined voice channel: "
+            f"{channel.name}"
+        )
 
     def join_channel(self, channel_id):
         if self.loop is None:
@@ -126,7 +148,10 @@ class DiscordClient:
         if guild is None:
             return
 
-        mixer = self.mixers.pop(guild_id, None)
+        mixer = self.mixers.pop(
+            guild_id,
+            None,
+        )
 
         if mixer:
             mixer.stop_all()
@@ -148,6 +173,10 @@ class DiscordClient:
             self.loop,
         )
 
+    # -------------------------------------------------
+    # Mixer management
+    # -------------------------------------------------
+
     def _get_mixer(self, guild_id):
         if guild_id not in self.mixers:
             self.mixers[guild_id] = AudioMixer()
@@ -155,29 +184,43 @@ class DiscordClient:
         return self.mixers[guild_id]
 
     async def _start_mixer(self, guild_id):
-        guild = self.client.get_guild(guild_id)
+        guild = self.client.get_guild(
+            guild_id
+        )
 
         if guild is None:
-            raise RuntimeError("Server not found.")
+            raise RuntimeError(
+                "Server not found."
+            )
 
         voice_client = guild.voice_client
 
         if voice_client is None:
             raise RuntimeError(
-                "The bot is not connected to a voice channel."
+                "The bot is not connected to a "
+                "voice channel."
             )
 
-        mixer = self._get_mixer(guild_id)
+        mixer = self._get_mixer(
+            guild_id
+        )
 
         if not voice_client.is_playing():
             voice_client.play(
                 mixer,
                 after=lambda error: print(
-                    f"Mixer stopped with error: {error}"
+                    (
+                        f"Mixer stopped with error: "
+                        f"{error}"
+                    )
                     if error
                     else "Mixer stopped."
                 ),
             )
+
+    # -------------------------------------------------
+    # Local-file playback
+    # -------------------------------------------------
 
     async def _play_mixed_audio(
         self,
@@ -186,9 +229,13 @@ class DiscordClient:
         volume=1.0,
         loop=False,
     ):
-        await self._start_mixer(guild_id)
+        await self._start_mixer(
+            guild_id
+        )
 
-        mixer = self._get_mixer(guild_id)
+        mixer = self._get_mixer(
+            guild_id
+        )
 
         source = AudioSource(
             filename=filename,
@@ -196,11 +243,15 @@ class DiscordClient:
             loop=loop,
         )
 
-        mixer.add_source(source)
+        mixer.add_source(
+            source
+        )
 
         print(
-            f"Added local file to mixer: {filename} "
-            f"(volume={volume}, loop={loop})"
+            f"Added local file to mixer: "
+            f"{filename} "
+            f"(volume={volume}, "
+            f"loop={loop})"
         )
 
         return source
@@ -225,26 +276,37 @@ class DiscordClient:
             self.loop,
         )
 
+    # -------------------------------------------------
+    # External audio input
+    # -------------------------------------------------
+
     async def _start_audio_input(
         self,
         guild_id,
         device_id,
         volume=1.0,
     ):
-        await self._start_mixer(guild_id)
+        await self._start_mixer(
+            guild_id
+        )
 
-        mixer = self._get_mixer(guild_id)
+        mixer = self._get_mixer(
+            guild_id
+        )
 
         source = InputDeviceSource(
             device_id=device_id,
             volume=volume,
         )
 
-        mixer.add_source(source)
+        mixer.add_source(
+            source
+        )
 
         print(
-            f"Added input device {device_id} "
-            f"to mixer (volume={volume})"
+            f"Added input device "
+            f"{device_id} to mixer "
+            f"(volume={volume})"
         )
 
         return source
@@ -267,22 +329,107 @@ class DiscordClient:
             self.loop,
         )
 
+    # -------------------------------------------------
+    # YouTube playback
+    # -------------------------------------------------
+
+    async def _play_youtube(
+        self,
+        guild_id,
+        youtube_url,
+        volume=1.0,
+        loop=False,
+        start_time=None,
+        stop_time=None,
+    ):
+        await self._start_mixer(
+            guild_id
+        )
+
+        mixer = self._get_mixer(
+            guild_id
+        )
+
+        source = YouTubeSource(
+            youtube_url=youtube_url,
+            volume=volume,
+            loop=loop,
+            start_time=start_time,
+            stop_time=stop_time,
+        )
+
+        mixer.add_source(
+            source
+        )
+
+        print(
+            f"Added YouTube source: "
+            f"{youtube_url} "
+            f"(volume={volume}, "
+            f"loop={loop}, "
+            f"start={start_time}, "
+            f"stop={stop_time})"
+        )
+
+        return source
+
+    def play_youtube(
+        self,
+        guild_id,
+        youtube_url,
+        volume=1.0,
+        loop=False,
+        start_time=None,
+        stop_time=None,
+    ):
+        if self.loop is None:
+            return None
+
+        return asyncio.run_coroutine_threadsafe(
+            self._play_youtube(
+                guild_id,
+                youtube_url,
+                volume,
+                loop,
+                start_time,
+                stop_time,
+            ),
+            self.loop,
+        )
+
+    # -------------------------------------------------
+    # Stop audio
+    # -------------------------------------------------
+
     def stop_all_audio(self, guild_id):
-        mixer = self.mixers.get(guild_id)
+        mixer = self.mixers.get(
+            guild_id
+        )
 
         if mixer:
             mixer.stop_all()
-            print("Stopped all audio.")
+            print(
+                "Stopped all audio."
+            )
+
+    # -------------------------------------------------
+    # Clean shutdown
+    # -------------------------------------------------
 
     async def _shutdown(self):
-        print("Shutting down Discord client...")
+        print(
+            "Shutting down Discord client..."
+        )
 
-        for mixer in list(self.mixers.values()):
+        for mixer in list(
+            self.mixers.values()
+        ):
             try:
                 mixer.stop_all()
             except Exception as error:
                 print(
-                    f"Mixer shutdown error: {error}"
+                    f"Mixer shutdown error: "
+                    f"{error}"
                 )
 
         self.mixers.clear()
@@ -294,13 +441,16 @@ class DiscordClient:
                 await voice_client.disconnect()
             except Exception as error:
                 print(
-                    f"Voice disconnect error: {error}"
+                    f"Voice disconnect error: "
+                    f"{error}"
                 )
 
         if not self.client.is_closed():
             await self.client.close()
 
-        print("Discord client shut down.")
+        print(
+            "Discord client shut down."
+        )
 
     def shutdown(self):
         if self.loop is None:
@@ -315,11 +465,16 @@ class DiscordClient:
         )
 
         try:
-            future.result(timeout=5)
+            future.result(
+                timeout=5
+            )
         except Exception as error:
             print(
-                f"Shutdown warning: {error}"
+                f"Shutdown warning: "
+                f"{error}"
             )
 
         if self.thread:
-            self.thread.join(timeout=5)
+            self.thread.join(
+                timeout=5
+            )
