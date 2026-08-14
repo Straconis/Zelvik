@@ -2,27 +2,32 @@
 
 Dark Between Audio is a Windows desktop audio bridge for Discord.
 
-It allows soundboards, local audio files, and supported online audio sources to play through a dedicated Discord bot instead of being mixed into your microphone.
+It allows soundboards, local audio files, and YouTube audio to play through a dedicated Discord bot instead of being mixed into your microphone.
 
-The primary use case is tabletop RPGs, soundboards, ambience, music, sound effects, and similar shared audio.
+The primary use case is tabletop RPGs, where a DM can send ambience, music, sound effects, soundboard audio, and other audio directly into a Discord voice channel.
 
-## What It Does
+## Features
 
 Dark Between Audio can:
 
-- Connect a bot to a Discord voice channel
+- Connect a dedicated bot to a Discord voice channel
 - Capture audio from a Windows audio input
-- Send soundboard audio through the bot
+- Route virtually any soundboard through VB-CABLE
 - Play local audio files
 - Play YouTube audio
-- Mix multiple sources together
+- Start YouTube playback at a specified timestamp
+- Stop YouTube playback at a specified timestamp
+- Loop YouTube playback
+- Mix multiple audio sources simultaneously
 - Control individual source volumes
 - Apply a master output volume
 - Start and stop sources independently
 - Remember commonly used settings
-- Run from a dark-mode desktop control panel
+- Run from a dark-mode Windows desktop control panel
 
-Example audio path:
+## How It Works
+
+A typical soundboard setup looks like this:
 
 ```text
 RPG Soundboard
@@ -47,11 +52,15 @@ Discord Bot
 Discord Voice Channel
 ```
 
+Dark Between Audio does not require a specific soundboard.
+
+As long as an application can send its audio to a Windows playback device, it can potentially be routed through VB-CABLE and into Dark Between Audio.
+
 ---
 
 # Requirements
 
-Dark Between Audio currently targets Windows.
+Dark Between Audio v1 currently targets Windows.
 
 ## Recommended Python Version
 
@@ -61,9 +70,9 @@ Use:
 Python 3.11 or Python 3.12
 ```
 
-Python 3.10 currently works, but some dependencies have begun deprecating it.
+Python 3.10 may still work, but some of the project's dependencies have begun deprecating support for it.
 
-Python 3.13+ is not currently recommended because the audio mixer still uses Python's `audioop` module, which was removed from newer Python versions.
+Python 3.13+ is not currently recommended because the audio mixer uses Python's `audioop` module, which was removed in Python 3.13.
 
 ## Required Software
 
@@ -71,15 +80,19 @@ You will need:
 
 - Python 3.11 or 3.12
 - FFmpeg
-- VB-Audio Virtual Cable
-- A Discord bot/application
+- VB-Audio Virtual Cable if you want to route another application into the bot
+- A Discord application/bot
 - Dark Between Audio's Python dependencies
 
 ---
 
 # 1. Install Python
 
-Install Python 3.11 or 3.12.
+Download Python from the official Python website:
+
+https://www.python.org/downloads/
+
+Python 3.11 or 3.12 is currently recommended.
 
 During installation, enable:
 
@@ -87,7 +100,7 @@ During installation, enable:
 Add python.exe to PATH
 ```
 
-Verify installation in PowerShell:
+After installation, open PowerShell and verify Python:
 
 ```powershell
 python --version
@@ -105,7 +118,19 @@ Python 3.12.x
 
 Dark Between Audio uses FFmpeg to decode and process audio.
 
-After installing FFmpeg, verify that it is available from PowerShell:
+FFmpeg's official website is:
+
+https://ffmpeg.org/
+
+Windows builds are available from several providers linked by the FFmpeg project.
+
+One commonly used Windows build provider is:
+
+https://www.gyan.dev/ffmpeg/builds/
+
+After installing FFmpeg, make sure its `bin` directory is available in your Windows PATH.
+
+Verify the installation from PowerShell:
 
 ```powershell
 ffmpeg -version
@@ -113,54 +138,64 @@ ffmpeg -version
 
 If FFmpeg displays version information, it is configured correctly.
 
-If Windows reports that `ffmpeg` is not recognized, FFmpeg is not installed or its executable directory is not in your PATH.
+If Windows reports that `ffmpeg` is not recognized, FFmpeg is either not installed or its executable directory is not in your PATH.
 
 ---
 
 # 3. Install VB-Audio Virtual Cable
 
-Dark Between Audio can capture normal Windows audio devices, but VB-Audio Virtual Cable provides the simplest way to route a soundboard into the bot without mixing it with your microphone.
+Dark Between Audio can capture normal Windows audio input devices, but VB-Audio Virtual Cable provides a simple way to route a soundboard or other application into the bot without mixing that audio into your microphone.
 
-Install VB-CABLE and reboot Windows if requested.
+Download VB-CABLE from the official VB-Audio website:
 
-After installation, Windows should expose two devices:
+https://vb-audio.com/Cable/index.htm
+
+Install VB-CABLE according to the instructions provided by VB-Audio.
+
+A Windows reboot may be required after installation.
+
+After installation, Windows should expose devices named similar to:
 
 ```text
 CABLE Input
 CABLE Output
 ```
 
-The naming can be confusing:
+## Understanding CABLE Input and CABLE Output
 
-```text
-Application
-    |
-    v
-CABLE Input
-    |
-    v
-VB-CABLE
-    |
-    v
-CABLE Output
-    |
-    v
-Dark Between Audio
-```
+The naming can initially seem backwards.
 
-Your soundboard sends audio TO:
+Your application sends audio **into**:
 
 ```text
 CABLE Input
 ```
 
-Dark Between Audio listens FROM:
+Dark Between Audio captures audio **from**:
 
 ```text
 CABLE Output
 ```
 
-## Example
+The route looks like this:
+
+```text
+Soundboard / Application
+          |
+          v
+      CABLE Input
+          |
+          v
+       VB-CABLE
+          |
+          v
+      CABLE Output
+          |
+          v
+ Dark Between Audio
+```
+
+## Example: RPG Soundboard
 
 Configure RPG Soundboard's output device as:
 
@@ -168,7 +203,7 @@ Configure RPG Soundboard's output device as:
 CABLE Input (VB-Audio Virtual Cable)
 ```
 
-Then select this inside Dark Between Audio:
+Then select this device inside Dark Between Audio:
 
 ```text
 CABLE Output (VB-Audio Virtual Cable)
@@ -180,43 +215,51 @@ Press:
 Start Input
 ```
 
-Audio played by the soundboard should now be transmitted by the Discord bot.
+Audio played by RPG Soundboard should now be transmitted through the Dark Between Audio Discord bot.
+
+The same basic setup can be used with other soundboards or applications that allow you to select their Windows audio output device.
 
 ---
 
-# 4. Create the Discord Bot
+# 4. Create a Discord Application
 
-Dark Between Audio requires your own Discord bot token.
+Dark Between Audio uses your own Discord bot to transmit audio.
 
-Never share your bot token.
+Open the Discord Developer Portal:
 
-Never commit your bot token to GitHub.
+https://discord.com/developers/applications
 
-## Create the Application
+Sign in with your Discord account and select:
 
-Open the Discord Developer Portal and create a new application.
+```text
+New Application
+```
 
-Give it whatever name you want.
+Give the application a name.
 
-Example:
+For example:
 
 ```text
 Dark Between Audio
 ```
 
-Open the application's:
+After creating the application, open its:
 
 ```text
 Bot
 ```
 
-section and create/configure the bot.
+section.
 
-## Bot Permissions
+Create or configure the bot associated with the application.
 
-The bot needs only the permissions required to see and speak in voice channels.
+---
 
-Recommended permissions:
+# 5. Configure Discord Bot Permissions
+
+Dark Between Audio does not need Administrator access to your Discord server.
+
+The bot needs permission to:
 
 ```text
 View Channels
@@ -224,60 +267,74 @@ Connect
 Speak
 ```
 
-Administrator permission is NOT required.
+The bot must have these permissions in any voice channel where you want Dark Between Audio to operate.
 
-Dark Between Audio does not currently require Message Content Intent because normal operation is controlled through the desktop GUI rather than Discord text commands.
-
-## Install the Bot Into Your Server
-
-In the Discord Developer Portal, configure a Guild Install for the application.
-
-The bot scope should be enabled.
-
-Install the bot into the Discord server where it will be used.
-
-The bot may appear offline until Dark Between Audio is running.
-
-That is normal.
+Dark Between Audio v1 is controlled through its Windows GUI rather than Discord text commands, so normal operation does not require Message Content Intent.
 
 ---
 
-# 5. Get Your Discord Bot Token
+# 6. Add the Bot to Your Discord Server
 
-Open your application in the Discord Developer Portal.
+Use the installation settings in the Discord Developer Portal to install the application into your Discord server.
 
-Go to:
-
-```text
-Bot
-```
-
-Generate or copy the bot token.
-
-IMPORTANT:
+The bot should be granted the permissions listed above:
 
 ```text
-DO NOT paste your token into Discord.
-DO NOT post it in screenshots.
-DO NOT commit it to GitHub.
-DO NOT put it directly inside the Python source code.
+View Channels
+Connect
+Speak
 ```
 
-If your token is ever exposed, immediately reset it in the Discord Developer Portal.
+After installation, the bot should appear in your server's member list.
+
+The bot will normally appear offline when Dark Between Audio is not running.
+
+That is expected.
+
+When Dark Between Audio starts and successfully connects to Discord, the bot should appear online.
 
 ---
 
-# 6. Configure the `.env` File
+# 7. Get Your Discord Bot Token
 
-Dark Between Audio reads the Discord token from a local `.env` file.
+Your Discord bot token is effectively the password for your bot.
 
-Create:
+Treat it like a password.
+
+In the Discord Developer Portal:
+
+1. Open your Dark Between Audio application.
+2. Open the `Bot` section.
+3. Generate, reset, or copy the bot token.
+4. Store it only in your local `.env` file.
+
+## IMPORTANT SECURITY WARNING
+
+Never:
+
+```text
+Post your bot token in Discord
+Share your bot token with another person
+Include your bot token in screenshots
+Commit your bot token to GitHub
+Put your bot token directly into the Python source code
+```
+
+If your token is ever exposed, immediately reset it through the Discord Developer Portal.
+
+The old token will stop working after it has been reset.
+
+---
+
+# 8. Configure the `.env` File
+
+Dark Between Audio reads your Discord bot token from a local `.env` file.
+
+In the root Dark Between Audio directory, create:
 
 ```text
 .env
 ```
-
-in the project directory.
 
 Add:
 
@@ -285,15 +342,23 @@ Add:
 DISCORD_TOKEN=YOUR_DISCORD_BOT_TOKEN_HERE
 ```
 
-Example:
+For example:
 
 ```text
 DISCORD_TOKEN=abc123exampletoken
 ```
 
-Do not add quotes unless they are actually part of the token.
+Do not use the example token above.
 
-The repository's `.gitignore` should include:
+Use the actual token generated for your Discord bot.
+
+Do not add quotes around the token unless they are actually part of the value.
+
+The repository includes an `.env.example` file that can be used as a template.
+
+Your real `.env` file should never be committed to Git.
+
+The project's `.gitignore` should include:
 
 ```text
 .env
@@ -302,27 +367,29 @@ __pycache__/
 *.pyc
 ```
 
-This prevents your Discord credentials and Python environment from accidentally being committed.
+---
 
-An `.env.example` file may safely contain:
+# 9. Download Dark Between Audio
 
-```text
-DISCORD_TOKEN=put_your_discord_bot_token_here
+Clone the repository using Git:
+
+```powershell
+git clone https://github.com/Straconis/dark-between-audio.git
 ```
 
-but must never contain a real token.
+Enter the project directory:
+
+```powershell
+cd dark-between-audio
+```
+
+Alternatively, download the repository as a ZIP file from GitHub and extract it to a folder on your computer.
 
 ---
 
-# 7. Create the Python Virtual Environment
+# 10. Create the Python Virtual Environment
 
 Open PowerShell in the Dark Between Audio directory.
-
-Example:
-
-```powershell
-cd C:\Projects\dark-between-audio
-```
 
 Create a virtual environment:
 
@@ -336,7 +403,7 @@ Activate it:
 .\.venv\Scripts\Activate.ps1
 ```
 
-The PowerShell prompt should change to something similar to:
+Your PowerShell prompt should change to something similar to:
 
 ```text
 (.venv) PS C:\Projects\dark-between-audio>
@@ -344,23 +411,23 @@ The PowerShell prompt should change to something similar to:
 
 You must activate the virtual environment again whenever you open a new PowerShell window.
 
+## PowerShell Execution Policy
+
+If Windows prevents `Activate.ps1` from running because script execution is disabled, you may need to adjust the PowerShell execution policy for your user account.
+
+Consult Microsoft's PowerShell documentation before changing security settings on your system.
+
 ---
 
-# 8. Install Python Dependencies
+# 11. Install Python Dependencies
 
-Install the required packages:
-
-```powershell
-pip install discord.py python-dotenv pynacl davey PySide6 sounddevice yt-dlp
-```
-
-A future release will provide these through:
+With the virtual environment active, install the required Python packages:
 
 ```powershell
 pip install -r requirements.txt
 ```
 
-The important packages currently include:
+Dark Between Audio currently uses packages including:
 
 ```text
 discord.py
@@ -372,11 +439,23 @@ sounddevice
 yt-dlp
 ```
 
+The exact dependency versions used by the project are listed in:
+
+```text
+requirements.txt
+```
+
 ---
 
-# 9. Run Dark Between Audio
+# 12. Run Dark Between Audio
 
-With the virtual environment active:
+Make sure the virtual environment is active:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+Then start Dark Between Audio:
 
 ```powershell
 python main.py
@@ -384,7 +463,7 @@ python main.py
 
 The Dark Between Audio control panel should open.
 
-The Discord bot should also appear online in your server.
+If the Discord token is valid, the bot should connect to Discord and appear online.
 
 ---
 
@@ -392,15 +471,11 @@ The Discord bot should also appear online in your server.
 
 ## Discord Connection
 
-At the top of the program:
+At the top of the application:
 
 1. Select your Discord server.
-2. Select your voice channel.
-3. Press:
-
-```text
-Join Channel
-```
+2. Select the desired voice channel.
+3. Press `Join Channel`.
 
 The bot should enter the selected Discord voice channel.
 
@@ -412,21 +487,19 @@ Leave Channel
 
 to disconnect it.
 
-The program remembers your previously selected Discord server and voice channel.
+Dark Between Audio remembers the previously selected Discord server and voice channel.
 
 ---
 
 # External Audio Input
 
-The External Audio Input section is intended primarily for soundboards and other applications.
+The External Audio Input section is intended for soundboards and other applications.
 
-Select:
+For a standard VB-CABLE configuration, select:
 
 ```text
 CABLE Output (VB-Audio Virtual Cable)
 ```
-
-or another audio capture device.
 
 Then press:
 
@@ -434,11 +507,21 @@ Then press:
 Start Input
 ```
 
-Play audio through the application routed into VB-CABLE.
+Play audio through the application that has been routed to:
 
-The audio should appear in Discord as coming from the Dark Between Audio bot.
+```text
+CABLE Input
+```
 
-Use the Input Volume slider to adjust its level.
+The audio should now be transmitted to Discord through the Dark Between Audio bot.
+
+## Input Volume
+
+Use the Input Volume slider to adjust the level of the external audio source.
+
+Values above 100% amplify the source and may cause clipping if pushed too high.
+
+## Stop Input
 
 Press:
 
@@ -448,9 +531,14 @@ Stop Input
 
 to stop only the external audio source.
 
-This will not stop YouTube or local files.
+This does not stop:
 
-The selected input device is remembered between sessions.
+```text
+YouTube
+Local audio files
+```
+
+The selected input device and volume are remembered between sessions.
 
 ---
 
@@ -458,7 +546,7 @@ The selected input device is remembered between sessions.
 
 Dark Between Audio can play local audio files directly.
 
-Supported formats depend on FFmpeg but commonly include:
+Commonly supported formats include:
 
 ```text
 MP3
@@ -467,13 +555,15 @@ OGG
 FLAC
 ```
 
+Actual format support depends on FFmpeg.
+
 Press:
 
 ```text
 Select Sound
 ```
 
-Choose the audio file.
+and choose an audio file.
 
 Then press:
 
@@ -483,33 +573,48 @@ Play Sound
 
 Multiple local sounds can play simultaneously.
 
-Use:
+This is useful for layering sound effects over ambience or music.
+
+## Local Volume
+
+Use the Local Volume slider to control local-file playback volume.
+
+## Stop Local Audio
+
+Press:
 
 ```text
 Stop Local Audio
 ```
 
-to stop local file playback without affecting external input or YouTube.
+to stop local files without affecting:
 
-The Local Volume slider adjusts local-file playback level.
+```text
+External Input
+YouTube
+```
 
 ---
 
 # YouTube Playback
 
-Dark Between Audio includes experimental YouTube playback support.
+Dark Between Audio includes YouTube audio playback support.
 
-Paste a YouTube URL into the YouTube section and press:
+Paste a YouTube URL into the YouTube URL field.
+
+Then press:
 
 ```text
 Play YouTube
 ```
 
+Dark Between Audio uses `yt-dlp` and FFmpeg as part of the playback pipeline.
+
 ## Start Timestamp
 
 You can optionally specify where playback should begin.
 
-Examples:
+Supported examples:
 
 ```text
 10
@@ -521,6 +626,8 @@ means:
 10 seconds
 ```
 
+This:
+
 ```text
 01:30
 ```
@@ -530,6 +637,8 @@ means:
 ```text
 1 minute 30 seconds
 ```
+
+And:
 
 ```text
 1:02:30
@@ -543,16 +652,18 @@ means:
 
 ## Stop Timestamp
 
-The Stop field allows playback to automatically stop at a specific point.
+The Stop field allows playback to stop at a specified point.
 
-Example:
+For example:
 
 ```text
 Start: 18:35
 Stop:  26:10
 ```
 
-Only that portion of the source will play.
+Only the selected portion should play.
+
+The Stop timestamp must occur after the Start timestamp.
 
 ## Loop
 
@@ -562,35 +673,56 @@ Enable:
 Loop
 ```
 
-to repeat the configured section.
+to repeat playback.
 
-If Start and Stop timestamps are configured, the selected segment is repeated rather than restarting from the beginning.
+When Start and Stop timestamps are configured, the selected section can be repeated.
 
 ## YouTube Volume
 
 YouTube sources can vary considerably in loudness.
 
-The YouTube volume control currently allows:
+The YouTube volume control allows amplification above the original source level.
 
 ```text
-0% - 200%
+100% = normal source level
 ```
 
-100% represents the source's normal level.
+Values above 100% amplify the audio.
 
-Values above 100% amplify the source and may cause clipping on very loud material.
+High amplification can introduce clipping or distortion.
 
-## Important
+## Stop YouTube
 
-You are responsible for ensuring that you have the necessary rights or permissions to play or transmit content.
+Press:
 
-Dark Between Audio is intended as an audio-routing and playback tool, not as a method for bypassing content protections or distributing copyrighted material.
+```text
+Stop YouTube
+```
+
+to stop YouTube playback without stopping:
+
+```text
+External Input
+Local audio files
+```
+
+---
+
+# Content and Copyright
+
+Dark Between Audio is an audio-routing and playback utility.
+
+You are responsible for ensuring that you have the appropriate rights, licenses, or permissions to play, stream, transmit, or otherwise use content through the software.
+
+Dark Between Audio is not intended to bypass DRM, access controls, subscription restrictions, or other content protections.
+
+YouTube and other third-party services have their own terms of service and usage requirements.
 
 ---
 
 # Master Volume
 
-The Master Output control changes the level of the final mixed Discord stream.
+The Master Output control adjusts the level of the final mixed Discord audio stream.
 
 It affects:
 
@@ -600,9 +732,26 @@ YouTube
 Local Files
 ```
 
-simultaneously.
+Individual source volume controls are applied separately from the master output level.
 
-Individual source volume controls are applied before the Master Volume.
+For example:
+
+```text
+Soundboard Volume
+        +
+YouTube Volume
+        +
+Local File Volume
+        |
+        v
+     Mixer
+        |
+        v
+ Master Volume
+        |
+        v
+     Discord
+```
 
 ---
 
@@ -626,6 +775,8 @@ Local Files
 
 The Discord bot remains connected to the voice channel.
 
+This is useful as an emergency silence button during a session.
+
 ---
 
 # Exit
@@ -636,25 +787,25 @@ Use the:
 Exit
 ```
 
-button or close the window normally.
+button or close the application window normally.
 
 Dark Between Audio will attempt to:
 
 ```text
 Stop active audio
-Terminate FFmpeg processes
+Terminate active audio processes
 Disconnect from Discord voice
 Close the Discord connection
 Exit cleanly
 ```
 
-Using the Exit button is preferable to terminating the application from PowerShell.
+Using the application's Exit button is preferable to terminating the application with `Ctrl+C`.
 
 ---
 
 # Audio Mixing
 
-Dark Between Audio contains a multi-source PCM mixer.
+Dark Between Audio contains a multi-source PCM audio mixer.
 
 This allows combinations such as:
 
@@ -664,32 +815,45 @@ RPG Soundboard ambience
 YouTube music
         +
 Local sound effect
-        ↓
-One Discord bot stream
+        |
+        v
+One Discord bot audio stream
 ```
 
-Sources run independently rather than stopping one another.
+Sources operate independently.
+
+Stopping one source should not stop the others.
+
+For example, you can:
+
+1. Run continuous ambience from RPG Soundboard through VB-CABLE.
+2. Start YouTube music over the ambience.
+3. Trigger a local sound effect.
+4. Stop the YouTube music.
+5. Leave the ambience running.
 
 ---
 
-# Settings
+# Saved Settings
 
-Dark Between Audio currently remembers several settings between runs, including:
+Dark Between Audio remembers several settings between sessions.
+
+These currently include:
 
 ```text
-Input device
+Audio input device
 Discord server
 Discord voice channel
-Input volume
+External input volume
 YouTube volume
 Local-file volume
 Master volume
 YouTube loop setting
 ```
 
-Discord bot credentials are NOT stored through the application's normal settings system.
+The Discord bot token is intentionally handled separately through `.env`.
 
-The bot token remains in `.env`.
+The application does not save the token through its normal GUI settings.
 
 ---
 
@@ -697,30 +861,31 @@ The bot token remains in `.env`.
 
 ```text
 dark-between-audio/
-│
-├── main.py
-│
-├── .env
-├── .env.example
-├── .gitignore
-├── requirements.txt
-├── README.md
-│
-├── audio/
-│   ├── __init__.py
-│   ├── mixer.py
-│   ├── source.py
-│   ├── input_source.py
-│   └── youtube_source.py
-│
-├── bot/
-│   ├── __init__.py
-│   └── discord_client.py
-│
-└── gui/
-    ├── __init__.py
-    └── main_window.py
+|
+|-- main.py
+|-- .env
+|-- .env.example
+|-- .gitignore
+|-- requirements.txt
+|-- README.md
+|
+|-- audio/
+|   |-- __init__.py
+|   |-- mixer.py
+|   |-- source.py
+|   |-- input_source.py
+|   `-- youtube_source.py
+|
+|-- bot/
+|   |-- __init__.py
+|   `-- discord_client.py
+|
+`-- gui/
+    |-- __init__.py
+    `-- main_window.py
 ```
+
+Your `.env` and `.venv` directories should remain local and should not be committed to the repository.
 
 ---
 
@@ -728,19 +893,29 @@ dark-between-audio/
 
 ## `ModuleNotFoundError`
 
-Example:
+For example:
 
 ```text
 ModuleNotFoundError: No module named 'PySide6'
 ```
 
-The most common cause is that the virtual environment is not active.
+The most common cause is that the project's virtual environment is not active or the dependencies have not been installed.
 
-Run:
+Activate the environment:
 
 ```powershell
-cd C:\Projects\dark-between-audio
 .\.venv\Scripts\Activate.ps1
+```
+
+Then install dependencies if necessary:
+
+```powershell
+pip install -r requirements.txt
+```
+
+Run the application:
+
+```powershell
 python main.py
 ```
 
@@ -748,23 +923,33 @@ python main.py
 
 ## Bot Is Offline
 
-Make sure Dark Between Audio is running.
+The bot is normally offline when Dark Between Audio is not running.
 
-The bot is expected to be offline whenever the Python application is not running.
+Start the application:
 
-Also verify:
-
-```text
-DISCORD_TOKEN
+```powershell
+python main.py
 ```
 
-is correctly configured in `.env`.
+If the bot remains offline, verify that:
+
+```text
+.env
+```
+
+exists and contains:
+
+```text
+DISCORD_TOKEN=your_actual_token
+```
+
+Also verify that the token has not been reset in the Discord Developer Portal.
 
 ---
 
-## Bot Cannot Join Voice
+## Bot Cannot Join the Voice Channel
 
-Verify the bot has:
+Verify that the bot has permission to:
 
 ```text
 View Channels
@@ -772,28 +957,56 @@ Connect
 Speak
 ```
 
-permissions for the target Discord voice channel.
+in the target voice channel.
+
+Discord channel-specific permission overrides can prevent a bot from connecting even when its server-level role normally allows it.
+
+---
+
+## Privileged Intents Error
+
+If you modify Dark Between Audio to use privileged Discord gateway intents, those intents must also be enabled for the bot in the Discord Developer Portal.
+
+The standard v1 GUI-controlled audio functionality should not require Message Content Intent.
 
 ---
 
 ## `davey library needed in order to use voice`
 
-Install:
+If you receive an error similar to:
+
+```text
+RuntimeError: davey library needed in order to use voice
+```
+
+make sure the virtual environment is active:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+Then install the project's dependencies:
+
+```powershell
+pip install -r requirements.txt
+```
+
+Or install `davey` directly:
 
 ```powershell
 pip install davey
 ```
 
-Then restart Dark Between Audio.
+Restart Dark Between Audio afterward.
 
 ---
 
-## No Sound From RPG Soundboard
+## No Sound From a Soundboard
 
-Check the entire route:
+Check the complete audio route:
 
 ```text
-RPG Soundboard
+Soundboard
     |
     v
 CABLE Input
@@ -811,19 +1024,36 @@ Dark Between Audio
 Discord
 ```
 
-Confirm:
+Confirm that:
 
-1. RPG Soundboard is outputting to `CABLE Input`.
+1. Your soundboard is outputting to `CABLE Input`.
 2. Dark Between Audio is capturing `CABLE Output`.
 3. `Start Input` has been pressed.
-4. The Discord bot is connected to a voice channel.
+4. The Discord bot has joined a voice channel.
 5. Input volume is not set to 0%.
+6. Master volume is not set to 0%.
+
+---
+
+## I Cannot Hear the Soundboard Locally
+
+When an application's output is routed exclusively to VB-CABLE, Windows may no longer send that application's audio directly to your speakers or headset.
+
+This does not necessarily mean Dark Between Audio is malfunctioning.
+
+The important signal path for the bot is:
+
+```text
+Application -> CABLE Input -> CABLE Output -> Dark Between Audio
+```
+
+Local monitoring may require additional Windows audio routing depending on your desired configuration.
 
 ---
 
 ## Audio Device Appears Multiple Times
 
-Windows exposes audio devices through several APIs such as:
+Windows exposes audio devices through multiple audio APIs, including:
 
 ```text
 MME
@@ -832,17 +1062,45 @@ WASAPI
 WDM-KS
 ```
 
-Dark Between Audio attempts to hide duplicate versions and prefer a sensible Windows backend.
+This can make the same physical or virtual audio device appear several times.
+
+Dark Between Audio attempts to remove duplicate entries and prefer a sensible Windows audio backend.
 
 ---
 
 ## YouTube Is Very Quiet
 
-Increase the YouTube volume control.
+Increase the YouTube volume slider.
 
-Some sources may require levels above 100%.
+Some sources have significantly lower playback levels than others.
 
-Be aware that aggressive amplification may cause clipping.
+Values above 100% amplify the audio.
+
+If the volume is increased too far, clipping or distortion may occur.
+
+---
+
+## YouTube Does Not Play
+
+First verify that FFmpeg works:
+
+```powershell
+ffmpeg -version
+```
+
+Then verify that `yt-dlp` is installed:
+
+```powershell
+yt-dlp --version
+```
+
+If necessary, update `yt-dlp`:
+
+```powershell
+python -m pip install -U yt-dlp
+```
+
+YouTube periodically changes its delivery systems, so an outdated `yt-dlp` version may stop resolving some sources.
 
 ---
 
@@ -854,7 +1112,39 @@ Run:
 ffmpeg -version
 ```
 
-If the command fails, install FFmpeg or add its executable directory to your Windows PATH.
+If Windows reports that the command does not exist, FFmpeg is either not installed or its executable directory is not included in your Windows PATH.
+
+See:
+
+https://ffmpeg.org/
+
+---
+
+## PowerShell Does Not Show `(.venv)`
+
+If your prompt looks like:
+
+```text
+PS C:\Projects\dark-between-audio>
+```
+
+instead of:
+
+```text
+(.venv) PS C:\Projects\dark-between-audio>
+```
+
+activate the environment:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+Then run:
+
+```powershell
+python main.py
+```
 
 ---
 
@@ -873,44 +1163,113 @@ The repository should always ignore:
 If a token is accidentally exposed:
 
 1. Open the Discord Developer Portal.
-2. Reset the bot token.
-3. Update `.env`.
-4. Restart Dark Between Audio.
+2. Open your application.
+3. Open the Bot section.
+4. Reset the bot token.
+5. Replace the old token in `.env`.
+6. Restart Dark Between Audio.
+
+A Discord bot token that has been committed to Git should be considered compromised even if the commit is later deleted.
+
+Reset the token rather than relying only on removing it from Git history.
 
 ---
 
-# Development Status
+# Development
 
-Dark Between Audio v1 currently has a complete working audio pipeline.
+To start a development session:
 
-Core functionality includes:
+```powershell
+cd C:\Projects\dark-between-audio
+.\.venv\Scripts\Activate.ps1
+python main.py
+```
+
+Check the current Git branch:
+
+```powershell
+git branch --show-current
+```
+
+Check repository status:
+
+```powershell
+git status
+```
+
+---
+
+# Dark Between Audio v1
+
+The v1 audio pipeline includes:
 
 ```text
 Discord voice connection
 Multi-source PCM mixing
-External audio capture
+External Windows audio capture
 VB-CABLE soundboard routing
 Local-file playback
 YouTube playback
+YouTube start/stop timestamps
+YouTube looping
 Independent source controls
-Per-source volume
-Master volume
+Per-source volume controls
+Master volume control
 Persistent settings
 Dark-mode GUI
-Clean shutdown
+Clean application shutdown
 ```
 
-Future improvements may include:
+---
 
-```text
-Packaged Windows executable
-Installer
-Improved error reporting
-Audio level meters
-Limiter / clipping protection
-Automatic prerequisite checks
-More polished status indicators
-```
+# Future Improvements
+
+Possible future improvements include:
+
+- Packaged Windows executable
+- Windows installer
+- Automatic prerequisite checks
+- Improved GUI error reporting
+- More accurate source-status reporting
+- Audio level meters
+- Master mute
+- Limiter / clipping protection
+- Additional audio routing options
+- Improved YouTube metadata/status display
+
+The goal is to keep Dark Between Audio relatively simple rather than turning it into a full digital audio workstation.
+
+---
+
+# Third-Party Software and Services
+
+Dark Between Audio interacts with or depends on third-party software and services including:
+
+- Discord
+- FFmpeg
+- VB-Audio Virtual Cable
+- Python
+- yt-dlp
+- PySide6
+- PortAudio / sounddevice
+
+These projects are separate from Dark Between Audio and are governed by their own licenses, terms, and policies.
+
+Official VB-Audio Virtual Cable page:
+
+https://vb-audio.com/Cable/index.htm
+
+Official FFmpeg website:
+
+https://ffmpeg.org/
+
+Official Python website:
+
+https://www.python.org/
+
+Discord Developer Portal:
+
+https://discord.com/developers/applications
 
 ---
 
@@ -918,6 +1277,4 @@ More polished status indicators
 
 License information will be added before the first public release.
 
-VB-Audio Virtual Cable, FFmpeg, Discord, YouTube, and other third-party software are separate projects and are governed by their respective licenses and terms.
-
-Dark Between Audio does not include or claim ownership of those third-party projects.
+Dark Between Audio does not include or claim ownership of Discord, YouTube, VB-Audio Virtual Cable, FFmpeg, Python, yt-dlp, PySide6, or other third-party projects used alongside it.
