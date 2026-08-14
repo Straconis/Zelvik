@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
 
 from config import has_environment_token
 from gui.token_dialog import TokenDialog
+from audio.windows_routing import WindowsRoutingManager
 
 
 class MainWindow(QMainWindow):
@@ -37,6 +38,7 @@ class MainWindow(QMainWindow):
         super().__init__()
 
         self.discord = discord_client
+        self.windows_routing = WindowsRoutingManager()
 
         self.settings = QSettings(
             "DarkBetween",
@@ -386,6 +388,68 @@ class MainWindow(QMainWindow):
         )
 
         # =================================================
+        # Zelvik readiness status
+        # =================================================
+
+        self.readiness_section_label = QLabel(
+            "Zelvik Status"
+        )
+
+        self.discord_ready_label = QLabel()
+        self.channel_ready_label = QLabel()
+        self.routing_ready_label = QLabel()
+        self.source_ready_label = QLabel()
+        self.good_to_go_label = QLabel()
+
+        # =================================================
+        # Windows audio routing
+        # =================================================
+
+        self.routing_section_label = QLabel(
+            "Windows Audio Routing"
+        )
+
+        self.routing_application_label = QLabel(
+            "Application"
+        )
+
+        self.routing_application_combo = QComboBox()
+
+        self.routing_output_label = QLabel(
+            "Output Device"
+        )
+
+        self.routing_output_combo = QComboBox()
+
+        self.routing_refresh_button = QPushButton(
+            "Refresh Applications / Devices"
+        )
+
+        self.routing_toggle_button = QPushButton(
+            "Enable Routing"
+        )
+
+        self.routing_toggle_button.setCheckable(
+            True
+        )
+
+        self.routing_toggle_button.setEnabled(
+            False
+        )
+
+        self.routing_settings_button = QPushButton(
+            "Open Windows Sound Settings"
+        )
+
+        self.routing_status_label = QLabel(
+            "Routing: Loading..."
+        )
+
+        self.routing_status_label.setWordWrap(
+            True
+        )
+
+        # =================================================
         # Master
         # =================================================
 
@@ -544,6 +608,20 @@ class MainWindow(QMainWindow):
 
         local_buttons.addWidget(
             self.stop_local_button
+        )
+
+        routing_buttons = QHBoxLayout()
+
+        routing_buttons.addWidget(
+            self.routing_refresh_button
+        )
+
+        routing_buttons.addWidget(
+            self.routing_toggle_button
+        )
+
+        routing_buttons.addWidget(
+            self.routing_settings_button
         )
 
         master_volume_layout = QHBoxLayout()
@@ -721,6 +799,68 @@ class MainWindow(QMainWindow):
             20
         )
 
+        # Zelvik readiness status
+        layout.addWidget(
+            self.readiness_section_label
+        )
+
+        layout.addWidget(
+            self.discord_ready_label
+        )
+
+        layout.addWidget(
+            self.channel_ready_label
+        )
+
+        layout.addWidget(
+            self.routing_ready_label
+        )
+
+        layout.addWidget(
+            self.source_ready_label
+        )
+
+        layout.addWidget(
+            self.good_to_go_label
+        )
+
+        layout.addSpacing(
+            20
+        )
+
+        # Windows audio routing
+        layout.addWidget(
+            self.routing_section_label
+        )
+
+        layout.addWidget(
+            self.routing_application_label
+        )
+
+        layout.addWidget(
+            self.routing_application_combo
+        )
+
+        layout.addWidget(
+            self.routing_output_label
+        )
+
+        layout.addWidget(
+            self.routing_output_combo
+        )
+
+        layout.addLayout(
+            routing_buttons
+        )
+
+        layout.addWidget(
+            self.routing_status_label
+        )
+
+        layout.addSpacing(
+            20
+        )
+
         # Master
         layout.addWidget(
             self.master_section_label
@@ -865,6 +1005,26 @@ class MainWindow(QMainWindow):
             self.local_volume_changed
         )
 
+        self.routing_refresh_button.clicked.connect(
+            self.refresh_windows_routing
+        )
+
+        self.routing_application_combo.currentIndexChanged.connect(
+            self.windows_routing_selection_changed
+        )
+
+        self.routing_output_combo.currentIndexChanged.connect(
+            self.windows_routing_selection_changed
+        )
+
+        self.routing_settings_button.clicked.connect(
+            self.open_windows_sound_settings
+        )
+
+        self.routing_toggle_button.clicked.connect(
+            self.toggle_windows_routing
+        )
+
         self.master_volume_slider.valueChanged.connect(
             self.master_volume_changed
         )
@@ -892,6 +1052,8 @@ class MainWindow(QMainWindow):
         self.timer.start(
             500
         )
+
+        self.refresh_windows_routing()
 
     # =================================================
     # Voice connection helpers
@@ -991,6 +1153,7 @@ class MainWindow(QMainWindow):
 
         self.update_voice_status()
         self.update_youtube_status()
+        self.update_readiness_status()
 
     def update_voice_status(self):
         guild_id = (
@@ -2127,6 +2290,656 @@ class MainWindow(QMainWindow):
                 guild_id,
                 value / 100.0,
             )
+
+    # =================================================
+    # Windows audio routing
+    # =================================================
+
+    def refresh_windows_routing(
+        self,
+    ):
+        self.routing_application_combo.blockSignals(
+            True
+        )
+
+        self.routing_output_combo.blockSignals(
+            True
+        )
+
+        saved_application = str(
+            self.settings.value(
+                "routing/application_name",
+                "",
+            )
+        )
+
+        saved_output = str(
+            self.settings.value(
+                "routing/output_device_name",
+                "",
+            )
+        )
+
+        self.routing_application_combo.clear()
+        self.routing_output_combo.clear()
+
+        applications = (
+            self.windows_routing
+            .get_running_applications()
+        )
+
+        for application in applications:
+            self.routing_application_combo.addItem(
+                application["name"],
+                application["name"],
+            )
+
+        outputs = (
+            self.windows_routing
+            .get_output_devices()
+        )
+
+        for output in outputs:
+            display_name = (
+                f"{output['name']} "
+                f"[{output['host_api']}]"
+            )
+
+            self.routing_output_combo.addItem(
+                display_name,
+                output["name"],
+            )
+
+        app_index = (
+            self.routing_application_combo
+            .findData(saved_application)
+        )
+
+        if app_index >= 0:
+            self.routing_application_combo.setCurrentIndex(
+                app_index
+            )
+
+        output_index = (
+            self.routing_output_combo
+            .findData(saved_output)
+        )
+
+        if output_index >= 0:
+            self.routing_output_combo.setCurrentIndex(
+                output_index
+            )
+
+        self.routing_application_combo.blockSignals(
+            False
+        )
+
+        self.routing_output_combo.blockSignals(
+            False
+        )
+
+        self.update_windows_routing_status()
+
+    def windows_routing_selection_changed(
+        self,
+    ):
+        application_name = (
+            self.routing_application_combo
+            .currentData()
+        )
+
+        output_device_name = (
+            self.routing_output_combo
+            .currentData()
+        )
+
+        self.settings.setValue(
+            "routing/application_name",
+            application_name or "",
+        )
+
+        self.settings.setValue(
+            "routing/output_device_name",
+            output_device_name or "",
+        )
+
+        self.update_windows_routing_status()
+
+    def update_windows_routing_status(
+        self,
+    ):
+        application_name = (
+            self.routing_application_combo
+            .currentData()
+        )
+
+        output_device_name = (
+            self.routing_output_combo
+            .currentData()
+        )
+
+        result = (
+            self.windows_routing
+            .get_route_status(
+                application_name,
+                output_device_name,
+            )
+        )
+
+        is_ready = (
+            result.get("state") == "ready"
+        )
+
+        backend_ready = (
+            self.windows_routing
+            .routing_backend_available()
+        )
+
+        routed = False
+
+        if is_ready and backend_ready:
+            routed = (
+                self.windows_routing
+                .route_matches(
+                    application_name,
+                    output_device_name,
+                )
+            )
+
+        self.routing_toggle_button.setEnabled(
+            is_ready and backend_ready
+        )
+
+        self.routing_toggle_button.blockSignals(
+            True
+        )
+
+        self.routing_toggle_button.setChecked(
+            routed
+        )
+
+        self.routing_toggle_button.setText(
+            "Disable Routing"
+            if routed
+            else "Enable Routing"
+        )
+
+        self.routing_toggle_button.blockSignals(
+            False
+        )
+
+        if routed:
+            self.routing_status_label.setText(
+                "Routing: Active — "
+                f"{application_name} → {output_device_name}"
+            )
+        elif not backend_ready:
+            self.routing_status_label.setText(
+                "Routing: Automatic routing backend unavailable. "
+                "Use Windows Sound Settings."
+            )
+        else:
+            self.routing_status_label.setText(
+                "Routing: "
+                + result.get(
+                    "message",
+                    "Unknown status",
+                )
+            )
+
+        self.update_readiness_status()
+
+    def toggle_windows_routing(
+        self,
+        checked,
+    ):
+        application_name = (
+            self.routing_application_combo
+            .currentData()
+        )
+
+        output_device_name = (
+            self.routing_output_combo
+            .currentData()
+        )
+
+        if checked:
+            self.routing_status_label.setText(
+                "Routing: Applying route..."
+            )
+
+            QApplication.processEvents()
+
+            result = (
+                self.windows_routing
+                .enable_route(
+                    application_name,
+                    output_device_name,
+                )
+            )
+
+        else:
+            self.routing_status_label.setText(
+                "Routing: Restoring Windows default..."
+            )
+
+            QApplication.processEvents()
+
+            result = (
+                self.windows_routing
+                .disable_route(
+                    application_name
+                )
+            )
+
+        if not result.get("ok"):
+            # Restore the control to the verified Windows state if the
+            # requested operation failed.
+            actual_routed = (
+                self.windows_routing
+                .route_matches(
+                    application_name,
+                    output_device_name,
+                )
+            )
+
+            self.routing_toggle_button.blockSignals(
+                True
+            )
+
+            self.routing_toggle_button.setChecked(
+                actual_routed
+            )
+
+            self.routing_toggle_button.setText(
+                "Disable Routing"
+                if actual_routed
+                else "Enable Routing"
+            )
+
+            self.routing_toggle_button.blockSignals(
+                False
+            )
+
+            QMessageBox.warning(
+                self,
+                "Windows Audio Routing",
+                (
+                    "Zelvik could not change the Windows "
+                    "application audio route.\n\n"
+                    + result.get(
+                        "message",
+                        "Unknown routing error.",
+                    )
+                    + "\n\nUse Open Windows Sound Settings "
+                    "for the manual fallback."
+                ),
+            )
+
+        # Re-read Windows rather than assuming the click succeeded.
+        self.update_windows_routing_status()
+        self.update_readiness_status()
+
+    def _status_text(
+        self,
+        state,
+        title,
+        detail,
+    ):
+        indicator = {
+            "green": "🟢",
+            "yellow": "🟡",
+            "red": "🔴",
+        }.get(
+            state,
+            "🟡",
+        )
+
+        return (
+            f"{indicator} {title}"
+            + (
+                f" — {detail}"
+                if detail
+                else ""
+            )
+        )
+
+    def update_readiness_status(
+        self,
+    ):
+        # Discord connection: use discord.py's actual client state.
+        discord_connected = bool(
+            self.discord.client.is_ready()
+        )
+
+        # Voice connection: reuse MainWindow's existing helper.
+        channel_joined = (
+            self.is_voice_connected()
+        )
+
+        voice_channel_name = None
+
+        guild_id = (
+            self.guild_combo.currentData()
+        )
+
+        if guild_id is not None:
+            guild = (
+                self.discord.client.get_guild(
+                    guild_id
+                )
+            )
+
+            if (
+                guild is not None
+                and guild.voice_client is not None
+                and guild.voice_client.channel
+                is not None
+            ):
+                voice_channel_name = (
+                    guild.voice_client.channel.name
+                )
+
+        application_name = (
+            self.routing_application_combo
+            .currentData()
+        )
+
+        output_device_name = (
+            self.routing_output_combo
+            .currentData()
+        )
+
+        route_state = {
+            "persisted": False,
+            "active": False,
+            "active_device_name": None,
+            "has_session": False,
+        }
+
+        if (
+            application_name
+            and output_device_name
+            and self.windows_routing
+            .routing_backend_available()
+        ):
+            route_state = (
+                self.windows_routing
+                .get_route_state(
+                    application_name,
+                    output_device_name,
+                )
+            )
+
+        routed = bool(
+            route_state.get(
+                "persisted",
+                False,
+            )
+        )
+
+        active_route = bool(
+            route_state.get(
+                "active",
+                False,
+            )
+        )
+
+        # Keep the routing controls/status synchronized with the
+        # actual persisted Windows route without requiring Refresh.
+        self.routing_toggle_button.blockSignals(
+            True
+        )
+
+        self.routing_toggle_button.setChecked(
+            routed
+        )
+
+        self.routing_toggle_button.setText(
+            "Disable Routing"
+            if routed
+            else "Enable Routing"
+        )
+
+        self.routing_toggle_button.blockSignals(
+            False
+        )
+
+        if routed:
+            if active_route:
+                self.routing_status_label.setText(
+                    "Routing: Active — "
+                    f"{application_name} → {output_device_name}"
+                )
+
+            elif route_state.get(
+                "has_session",
+                False,
+            ):
+                current_device = (
+                    route_state.get(
+                        "active_device_name"
+                    )
+                    or "another output device"
+                )
+
+                self.routing_status_label.setText(
+                    "Routing: Saved — "
+                    f"{application_name} → {output_device_name}. "
+                    "Current audio session is still on "
+                    f"{current_device}; restart playback or "
+                    "the application to bind the new route."
+                )
+
+            else:
+                self.routing_status_label.setText(
+                    "Routing: Saved — "
+                    f"{application_name} → {output_device_name}. "
+                    "Waiting for the application to create "
+                    "an audio session."
+                )
+
+        # Determine which Zelvik source paths are actually active.
+        input_active = False
+        youtube_active = False
+        local_active = False
+
+        if guild_id is not None:
+            state = (
+                self.discord.active_sources.get(
+                    guild_id
+                )
+            )
+
+            if state:
+                input_active = (
+                    state.get("input")
+                    is not None
+                )
+
+                youtube_source = state.get(
+                    "youtube"
+                )
+
+                if youtube_source is not None:
+                    youtube_finished = bool(
+                        getattr(
+                            youtube_source,
+                            "finished",
+                            False,
+                        )
+                    )
+
+                    youtube_active = (
+                        not youtube_finished
+                    )
+
+                local_sources = state.get(
+                    "local",
+                    []
+                )
+
+                local_active = bool(
+                    local_sources
+                )
+
+        any_source_active = (
+            input_active
+            or youtube_active
+            or local_active
+        )
+
+        # Windows app routing matters while using external input,
+        # and while Zelvik is idle so the user can verify the route
+        # before starting a source. It becomes irrelevant only when
+        # YouTube or local playback is the active source.
+        routing_required = (
+            input_active
+            or not any_source_active
+        )
+
+        if input_active:
+            source_detail = "External input active"
+
+        elif youtube_active:
+            source_detail = "YouTube playback active"
+
+        elif local_active:
+            source_detail = "Local playback active"
+
+        else:
+            source_detail = "No audio source active"
+
+        self.discord_ready_label.setText(
+            self._status_text(
+                "green"
+                if discord_connected
+                else "yellow",
+                "Discord Connected",
+                (
+                    f"Connected as {self.discord.client.user}"
+                    if discord_connected
+                    else "Waiting"
+                ),
+            )
+        )
+
+        self.channel_ready_label.setText(
+            self._status_text(
+                "green"
+                if channel_joined
+                else "yellow",
+                "Voice Channel Joined",
+                (
+                    voice_channel_name
+                    if channel_joined
+                    else "Waiting"
+                ),
+            )
+        )
+
+        if routing_required:
+            if routed and active_route:
+                routing_light_state = "green"
+                routing_detail = (
+                    f"{application_name} → {output_device_name}"
+                )
+
+            elif routed:
+                routing_light_state = "yellow"
+
+                if route_state.get(
+                    "has_session",
+                    False,
+                ):
+                    routing_detail = (
+                        "Route saved; restart playback/app "
+                        "to activate"
+                    )
+                else:
+                    routing_detail = (
+                        "Route saved; waiting for audio session"
+                    )
+
+            else:
+                routing_light_state = "yellow"
+                routing_detail = "Required for external input"
+
+            self.routing_ready_label.setText(
+                self._status_text(
+                    routing_light_state,
+                    "Audio Routed",
+                    routing_detail,
+                )
+            )
+
+        else:
+            # Routing is irrelevant for YouTube/local sources because
+            # Zelvik itself is already feeding those into Discord.
+            self.routing_ready_label.setText(
+                "⚪ Audio Routed — Not required for current source"
+            )
+
+        self.source_ready_label.setText(
+            self._status_text(
+                "green"
+                if any_source_active
+                else "yellow",
+                "Audio Source Started",
+                source_detail,
+            )
+        )
+
+        routing_ok = (
+            active_route
+            if routing_required
+            else True
+        )
+
+        all_ready = (
+            discord_connected
+            and channel_joined
+            and any_source_active
+            and routing_ok
+        )
+
+        self.good_to_go_label.setText(
+            self._status_text(
+                "green"
+                if all_ready
+                else "yellow",
+                "Good to Go",
+                (
+                    "Ready"
+                    if all_ready
+                    else "Waiting for all checks"
+                ),
+            )
+        )
+
+    def open_windows_sound_settings(
+        self,
+    ):
+        if (
+            self.windows_routing
+            .open_windows_sound_settings()
+        ):
+            self.routing_status_label.setText(
+                "Routing: Opened Windows sound settings "
+                "for manual fallback."
+            )
+
+            return
+
+        QMessageBox.warning(
+            self,
+            "Windows Audio Routing",
+            (
+                "Zelvik could not open Windows sound settings.\n\n"
+                "Open Settings > System > Sound and use the "
+                "per-app volume/output controls manually."
+            ),
+        )
 
     # =================================================
     # Master
