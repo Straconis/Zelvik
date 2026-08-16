@@ -2,7 +2,6 @@ import os
 import shutil
 
 from PySide6.QtCore import (
-    QSettings,
     Qt,
     QTimer,
 )
@@ -11,8 +10,11 @@ from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
+    QDialog,
     QFileDialog,
     QHBoxLayout,
+    QGroupBox,
+    QGridLayout,
     QLabel,
     QLineEdit,
     QMainWindow,
@@ -28,6 +30,7 @@ from PySide6.QtWidgets import (
 from config import has_environment_token
 from gui.token_dialog import TokenDialog
 from audio.windows_routing import WindowsRoutingManager
+from settings import ZelvikSettings
 
 
 class MainWindow(QMainWindow):
@@ -40,10 +43,7 @@ class MainWindow(QMainWindow):
         self.discord = discord_client
         self.windows_routing = WindowsRoutingManager()
 
-        self.settings = QSettings(
-            "DarkBetween",
-            "DarkBetweenAudio",
-        )
+        self.settings = ZelvikSettings()
 
         self.selected_audio_file = None
 
@@ -51,19 +51,20 @@ class MainWindow(QMainWindow):
         self.audio_devices_loaded = False
         self.shutting_down = False
         self.last_youtube_status = None
+        self.discord_status_applied = False
 
         self.setWindowTitle(
-            "Zelvik v1.1.0"
+            "Zelvik v1.2.0"
         )
 
         self.resize(
-            850,
             760,
+            860,
         )
 
         self.setMinimumSize(
-            720,
-            560,
+            680,
+            520,
         )
 
         # =================================================
@@ -484,9 +485,36 @@ class MainWindow(QMainWindow):
             "STOP ALL AUDIO"
         )
 
+        self.settings_button = QPushButton(
+            "Settings"
+        )
+
+        saved_discord_status = self.settings.value(
+            "discord/status_message",
+            "Handling audio",
+            type=str,
+        )
+
+        self.discord_status_input = QLineEdit()
+        self.discord_status_input.setText(
+            saved_discord_status
+        )
+        self.discord_status_input.setPlaceholderText(
+            "Handling audio"
+        )
+
+        self.discord_status_apply_button = QPushButton(
+            "Apply Status"
+        )
+        self.discord_status_apply_button.setEnabled(
+            True
+        )
+
         self.exit_button = QPushButton(
             "Exit"
         )
+
+        self._build_settings_dialog()
 
         # =================================================
         # Layouts
@@ -501,14 +529,6 @@ class MainWindow(QMainWindow):
         discord_buttons.addWidget(
             self.leave_button
         )
-
-        discord_settings_buttons = QHBoxLayout()
-
-        discord_settings_buttons.addWidget(
-            self.change_token_button
-        )
-
-        discord_settings_buttons.addStretch()
 
         input_volume_layout = QHBoxLayout()
 
@@ -572,20 +592,6 @@ class MainWindow(QMainWindow):
             self.youtube_stop_button
         )
 
-        youtube_auth_buttons = QHBoxLayout()
-
-        youtube_auth_buttons.addWidget(
-            self.youtube_auth_select_button
-        )
-
-        youtube_auth_buttons.addWidget(
-            self.youtube_auth_check_button
-        )
-
-        youtube_auth_buttons.addWidget(
-            self.youtube_auth_disable_button
-        )
-
         local_volume_layout = QHBoxLayout()
 
         local_volume_layout.addWidget(
@@ -610,20 +616,6 @@ class MainWindow(QMainWindow):
             self.stop_local_button
         )
 
-        routing_buttons = QHBoxLayout()
-
-        routing_buttons.addWidget(
-            self.routing_refresh_button
-        )
-
-        routing_buttons.addWidget(
-            self.routing_toggle_button
-        )
-
-        routing_buttons.addWidget(
-            self.routing_settings_button
-        )
-
         master_volume_layout = QHBoxLayout()
 
         master_volume_layout.addWidget(
@@ -637,10 +629,14 @@ class MainWindow(QMainWindow):
         bottom_buttons = QHBoxLayout()
 
         bottom_buttons.addWidget(
-            self.stop_all_button
+            self.settings_button
         )
 
         bottom_buttons.addStretch()
+
+        bottom_buttons.addWidget(
+            self.stop_all_button
+        )
 
         bottom_buttons.addWidget(
             self.exit_button
@@ -652,232 +648,140 @@ class MainWindow(QMainWindow):
 
         layout = QVBoxLayout()
 
+        # Connection summary
         layout.addWidget(
             self.status_label
-        )
-
-        layout.addWidget(
-            self.guild_label
-        )
-
-        layout.addWidget(
-            self.guild_combo
-        )
-
-        layout.addWidget(
-            self.channel_label
-        )
-
-        layout.addWidget(
-            self.channel_combo
-        )
-
-        layout.addLayout(
-            discord_buttons
-        )
-
-        layout.addLayout(
-            discord_settings_buttons
         )
 
         layout.addWidget(
             self.voice_status_label
         )
 
-        layout.addSpacing(
-            20
+        readiness_lights = QHBoxLayout()
+
+        readiness_lights.addWidget(
+            self.discord_ready_label
+        )
+        readiness_lights.addWidget(
+            self.channel_ready_label
+        )
+        readiness_lights.addWidget(
+            self.routing_ready_label
+        )
+        readiness_lights.addWidget(
+            self.source_ready_label
+        )
+        readiness_lights.addStretch()
+        readiness_lights.addWidget(
+            self.good_to_go_label
         )
 
-        # External input
+        layout.addLayout(
+            readiness_lights
+        )
+
+        layout.addSpacing(
+            12
+        )
+
+        # Discord session controls
+        layout.addWidget(
+            self.guild_label
+        )
+        layout.addWidget(
+            self.guild_combo
+        )
+        layout.addWidget(
+            self.channel_label
+        )
+        layout.addWidget(
+            self.channel_combo
+        )
+        layout.addLayout(
+            discord_buttons
+        )
+
+        layout.addSpacing(
+            16
+        )
+
+        # External input: device selection now lives in Settings.
         layout.addWidget(
             self.input_section_label
         )
-
-        layout.addWidget(
-            self.input_device_label
-        )
-
-        layout.addWidget(
-            self.input_device_combo
-        )
-
         layout.addLayout(
             input_volume_layout
         )
-
         layout.addLayout(
             input_buttons
         )
-
         layout.addWidget(
             self.input_status_label
         )
 
         layout.addSpacing(
-            20
+            16
         )
 
-        # YouTube
+        # YouTube session controls
         layout.addWidget(
             self.youtube_section_label
         )
-
-        layout.addWidget(
-            self.youtube_url_label
-        )
-
         layout.addWidget(
             self.youtube_url_input
         )
-
         layout.addLayout(
             youtube_times
         )
-
         layout.addLayout(
             youtube_volume_layout
         )
-
         layout.addLayout(
             youtube_buttons
         )
-
         layout.addWidget(
             self.youtube_status_label
         )
 
-        layout.addWidget(
-            self.youtube_activity_label
-        )
-
-        layout.addWidget(
-            self.youtube_activity_log
-        )
-
-        layout.addWidget(
-            self.youtube_auth_label
-        )
-
-        layout.addWidget(
-            self.youtube_auth_file_label
-        )
-
-        layout.addLayout(
-            youtube_auth_buttons
-        )
-
-        layout.addWidget(
-            self.youtube_auth_status_label
-        )
-
         layout.addSpacing(
-            20
+            16
         )
 
         # Local audio
         layout.addWidget(
             self.local_section_label
         )
-
         layout.addWidget(
             self.file_label
         )
-
         layout.addLayout(
             local_volume_layout
         )
-
         layout.addLayout(
             local_buttons
         )
-
         layout.addWidget(
             self.local_status_label
         )
 
         layout.addSpacing(
-            20
-        )
-
-        # Zelvik readiness status
-        layout.addWidget(
-            self.readiness_section_label
-        )
-
-        layout.addWidget(
-            self.discord_ready_label
-        )
-
-        layout.addWidget(
-            self.channel_ready_label
-        )
-
-        layout.addWidget(
-            self.routing_ready_label
-        )
-
-        layout.addWidget(
-            self.source_ready_label
-        )
-
-        layout.addWidget(
-            self.good_to_go_label
-        )
-
-        layout.addSpacing(
-            20
-        )
-
-        # Windows audio routing
-        layout.addWidget(
-            self.routing_section_label
-        )
-
-        layout.addWidget(
-            self.routing_application_label
-        )
-
-        layout.addWidget(
-            self.routing_application_combo
-        )
-
-        layout.addWidget(
-            self.routing_output_label
-        )
-
-        layout.addWidget(
-            self.routing_output_combo
-        )
-
-        layout.addLayout(
-            routing_buttons
-        )
-
-        layout.addWidget(
-            self.routing_status_label
-        )
-
-        layout.addSpacing(
-            20
+            16
         )
 
         # Master
         layout.addWidget(
             self.master_section_label
         )
-
         layout.addLayout(
             master_volume_layout
         )
 
         layout.addStretch()
-
         layout.addLayout(
             bottom_buttons
         )
 
         content_widget = QWidget()
-
         content_widget.setLayout(
             layout
         )
@@ -885,34 +789,28 @@ class MainWindow(QMainWindow):
         scroll_area = QScrollArea(
             self
         )
-
         scroll_area.setWidgetResizable(
             True
         )
-
         scroll_area.setHorizontalScrollBarPolicy(
             Qt.ScrollBarAlwaysOff
         )
-
         scroll_area.setWidget(
             content_widget
         )
 
         root_layout = QVBoxLayout()
-
         root_layout.setContentsMargins(
-            0,
-            0,
-            0,
-            0,
+            8,
+            8,
+            8,
+            8,
         )
-
         root_layout.addWidget(
             scroll_area
         )
 
         root_container = QWidget()
-
         root_container.setLayout(
             root_layout
         )
@@ -1033,6 +931,14 @@ class MainWindow(QMainWindow):
             self.stop_all_audio
         )
 
+        self.settings_button.clicked.connect(
+            self.open_settings
+        )
+
+        self.discord_status_apply_button.clicked.connect(
+            self.apply_discord_status
+        )
+
         self.exit_button.clicked.connect(
             self.close
         )
@@ -1054,6 +960,343 @@ class MainWindow(QMainWindow):
         )
 
         self.refresh_windows_routing()
+
+    # =================================================
+    # Settings window
+    # =================================================
+
+    def _build_settings_dialog(self):
+        self.settings_dialog = QDialog(
+            self
+        )
+        self.settings_dialog.setWindowTitle(
+            "Zelvik Settings"
+        )
+        self.settings_dialog.resize(
+            860,
+            680,
+        )
+        self.settings_dialog.setMinimumSize(
+            820,
+            560,
+        )
+
+        dialog_layout = QVBoxLayout(
+            self.settings_dialog
+        )
+        dialog_layout.setContentsMargins(
+            0,
+            0,
+            0,
+            0,
+        )
+
+        settings_scroll = QScrollArea()
+        settings_scroll.setWidgetResizable(
+            True
+        )
+        settings_scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarAlwaysOff
+        )
+        settings_scroll.setVerticalScrollBarPolicy(
+            Qt.ScrollBarAsNeeded
+        )
+        dialog_layout.addWidget(
+            settings_scroll
+        )
+
+        settings_content = QWidget()
+        settings_content.setMinimumWidth(
+            0
+        )
+        settings_scroll.setWidget(
+            settings_content
+        )
+
+        settings_layout = QVBoxLayout(
+            settings_content
+        )
+        settings_layout.setSpacing(12)
+        settings_layout.setContentsMargins(
+            16,
+            12,
+            24,
+            12,
+        )
+
+        # -------------------------------------------------
+        # Discord
+        # -------------------------------------------------
+        discord_group = QGroupBox(
+            "Discord"
+        )
+        discord_layout = QVBoxLayout()
+
+        credentials_note = QLabel(
+            "Bot credentials are stored securely "
+            "in Windows Credential Manager."
+        )
+        credentials_note.setWordWrap(
+            True
+        )
+        discord_layout.addWidget(
+            credentials_note
+        )
+        discord_layout.addWidget(
+            self.change_token_button
+        )
+
+        discord_status_label = QLabel(
+            "Status / activity"
+        )
+        discord_layout.addWidget(
+            discord_status_label
+        )
+        discord_layout.addWidget(
+            self.discord_status_input
+        )
+        discord_layout.addWidget(
+            self.discord_status_apply_button
+        )
+
+        discord_group.setLayout(
+            discord_layout
+        )
+        settings_layout.addWidget(
+            discord_group
+        )
+
+        # -------------------------------------------------
+        # External audio input
+        # -------------------------------------------------
+        input_group = QGroupBox(
+            "External Audio Input"
+        )
+        input_layout = QVBoxLayout()
+        input_layout.addWidget(
+            QLabel("Input device")
+        )
+        input_layout.addWidget(
+            self.input_device_combo
+        )
+        input_group.setLayout(
+            input_layout
+        )
+        settings_layout.addWidget(
+            input_group
+        )
+
+        # -------------------------------------------------
+        # YouTube authentication
+        # -------------------------------------------------
+        youtube_group = QGroupBox(
+            "YouTube Authentication"
+        )
+        youtube_layout = QVBoxLayout()
+
+        youtube_layout.addWidget(
+            self.youtube_auth_status_label
+        )
+
+        youtube_buttons_top = QHBoxLayout()
+        youtube_buttons_top.addWidget(
+            self.youtube_auth_select_button
+        )
+        youtube_buttons_top.addWidget(
+            self.youtube_auth_check_button
+        )
+        youtube_layout.addLayout(
+            youtube_buttons_top
+        )
+
+        youtube_buttons_bottom = QHBoxLayout()
+        youtube_buttons_bottom.addWidget(
+            self.youtube_auth_disable_button
+        )
+
+        self.youtube_auth_details_button = QPushButton(
+            "Show Details"
+        )
+        self.youtube_auth_details_button.setCheckable(
+            True
+        )
+        self.youtube_auth_details_button.setMaximumWidth(
+            120
+        )
+        self.youtube_auth_details_button.toggled.connect(
+            self.toggle_youtube_auth_details
+        )
+
+        youtube_buttons_bottom.addWidget(
+            self.youtube_auth_details_button
+        )
+        youtube_buttons_bottom.addStretch()
+        youtube_layout.addLayout(
+            youtube_buttons_bottom
+        )
+
+        self.youtube_auth_file_label.setVisible(
+            False
+        )
+        youtube_layout.addWidget(
+            self.youtube_auth_file_label
+        )
+
+        youtube_group.setLayout(
+            youtube_layout
+        )
+        settings_layout.addWidget(
+            youtube_group
+        )
+
+        # -------------------------------------------------
+        # Windows audio routing
+        # -------------------------------------------------
+        routing_group = QGroupBox(
+            "Windows Audio Routing"
+        )
+        routing_layout = QVBoxLayout()
+
+        routing_hint = QLabel(
+            "⚠  <b>Can't find your application?</b><br>"
+            "Open the application, play some audio through it, "
+            "then click <b>Refresh Applications / Devices</b>."
+        )
+        routing_hint.setWordWrap(
+            True
+        )
+        routing_hint.setStyleSheet(
+            "QLabel {"
+            "  border: 1px solid palette(mid);"
+            "  border-radius: 4px;"
+            "  padding: 8px;"
+            "}"
+        )
+        routing_layout.addWidget(
+            routing_hint
+        )
+
+        routing_layout.addWidget(
+            QLabel("Application")
+        )
+        routing_layout.addWidget(
+            self.routing_application_combo
+        )
+
+        routing_layout.addWidget(
+            QLabel("Output device")
+        )
+        routing_layout.addWidget(
+            self.routing_output_combo
+        )
+
+        routing_layout.addWidget(
+            self.routing_refresh_button
+        )
+        routing_layout.addWidget(
+            self.routing_toggle_button
+        )
+        routing_layout.addWidget(
+            self.routing_settings_button
+        )
+        routing_layout.addWidget(
+            self.routing_status_label
+        )
+
+        routing_group.setLayout(
+            routing_layout
+        )
+        settings_layout.addWidget(
+            routing_group
+        )
+
+        settings_layout.addStretch()
+
+        close_row = QHBoxLayout()
+        close_row.addStretch()
+
+        close_settings_button = QPushButton(
+            "Close"
+        )
+        close_settings_button.setMinimumWidth(
+            100
+        )
+        close_settings_button.clicked.connect(
+            self.settings_dialog.close
+        )
+        close_row.addWidget(
+            close_settings_button
+        )
+        settings_layout.addLayout(
+            close_row
+        )
+
+
+    def toggle_youtube_auth_details(
+        self,
+        checked,
+    ):
+        self.youtube_auth_file_label.setVisible(
+            checked
+        )
+        self.youtube_auth_details_button.setText(
+            "Hide Details"
+            if checked
+            else "Show Details"
+        )
+
+    def open_settings(self):
+        self.settings_dialog.show()
+        self.settings_dialog.raise_()
+        self.settings_dialog.activateWindow()
+
+    def apply_discord_status(
+        self,
+        checked=False,
+        show_message=True,
+        save=True,
+    ):
+        activity_text = (
+            self.discord_status_input.text()
+            .strip()
+        )
+
+        if save:
+            self.settings.setValue(
+                "discord/status_message",
+                activity_text,
+            )
+
+        if not self.discord.client.is_ready():
+            if show_message:
+                QMessageBox.information(
+                    self,
+                    "Discord Status Saved",
+                    (
+                        "The status was saved and will be "
+                        "applied when Zelvik connects to Discord."
+                    ),
+                )
+
+            return
+
+        self.discord.set_status(
+            activity_text
+        )
+
+        if show_message:
+            QMessageBox.information(
+                self,
+                "Discord Status Updated",
+                (
+                    "Zelvik's Discord activity was updated to:\n\n"
+                    + (
+                        activity_text
+                        if activity_text
+                        else "(no activity)"
+                    )
+                ),
+            )
 
     # =================================================
     # Voice connection helpers
@@ -1140,6 +1383,13 @@ class MainWindow(QMainWindow):
             "Discord: Connected as "
             f"{self.discord.client.user}"
         )
+
+        if not self.discord_status_applied:
+            self.apply_discord_status(
+                show_message=False,
+                save=False,
+            )
+            self.discord_status_applied = True
 
         if not self.guilds_loaded:
             self.load_guilds()
@@ -2811,31 +3061,25 @@ class MainWindow(QMainWindow):
             source_detail = "No audio source active"
 
         self.discord_ready_label.setText(
-            self._status_text(
-                "green"
-                if discord_connected
-                else "yellow",
-                "Discord Connected",
-                (
-                    f"Connected as {self.discord.client.user}"
-                    if discord_connected
-                    else "Waiting"
-                ),
-            )
+            "🟢 Discord"
+            if discord_connected
+            else "🟡 Discord"
+        )
+        self.discord_ready_label.setToolTip(
+            f"Connected as {self.discord.client.user}"
+            if discord_connected
+            else "Waiting for Discord connection"
         )
 
         self.channel_ready_label.setText(
-            self._status_text(
-                "green"
-                if channel_joined
-                else "yellow",
-                "Voice Channel Joined",
-                (
-                    voice_channel_name
-                    if channel_joined
-                    else "Waiting"
-                ),
-            )
+            "🟢 Voice"
+            if channel_joined
+            else "🟡 Voice"
+        )
+        self.channel_ready_label.setToolTip(
+            voice_channel_name
+            if channel_joined
+            else "No voice channel joined"
         )
 
         if routing_required:
@@ -2866,28 +3110,31 @@ class MainWindow(QMainWindow):
                 routing_detail = "Required for external input"
 
             self.routing_ready_label.setText(
-                self._status_text(
-                    routing_light_state,
-                    "Audio Routed",
-                    routing_detail,
-                )
+                "🟢 Routing"
+                if routing_light_state == "green"
+                else "🟡 Routing"
+            )
+            self.routing_ready_label.setToolTip(
+                routing_detail
             )
 
         else:
             # Routing is irrelevant for YouTube/local sources because
             # Zelvik itself is already feeding those into Discord.
             self.routing_ready_label.setText(
-                "⚪ Audio Routed — Not required for current source"
+                "⚪ Routing"
+            )
+            self.routing_ready_label.setToolTip(
+                "Not required for current source"
             )
 
         self.source_ready_label.setText(
-            self._status_text(
-                "green"
-                if any_source_active
-                else "yellow",
-                "Audio Source Started",
-                source_detail,
-            )
+            "🟢 Source"
+            if any_source_active
+            else "🟡 Source"
+        )
+        self.source_ready_label.setToolTip(
+            source_detail
         )
 
         routing_ok = (
@@ -2904,17 +3151,14 @@ class MainWindow(QMainWindow):
         )
 
         self.good_to_go_label.setText(
-            self._status_text(
-                "green"
-                if all_ready
-                else "yellow",
-                "Good to Go",
-                (
-                    "Ready"
-                    if all_ready
-                    else "Waiting for all checks"
-                ),
-            )
+            "🟢 READY"
+            if all_ready
+            else "🟡 NOT READY"
+        )
+        self.good_to_go_label.setToolTip(
+            "All checks passed"
+            if all_ready
+            else "Waiting for all required checks"
         )
 
     def open_windows_sound_settings(

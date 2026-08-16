@@ -175,6 +175,52 @@ class DiscordClient:
         return future
 
     # -------------------------------------------------
+    # Discord presence / activity
+    # -------------------------------------------------
+
+    async def _set_status(
+        self,
+        activity_text,
+    ):
+        activity_text = (
+            str(activity_text).strip()
+            if activity_text is not None
+            else ""
+        )
+
+        activity = (
+            discord.Game(
+                name=activity_text
+            )
+            if activity_text
+            else None
+        )
+
+        await self.client.change_presence(
+            activity=activity
+        )
+
+        print(
+            "Discord activity updated: "
+            + (
+                activity_text
+                if activity_text
+                else "(cleared)"
+            )
+        )
+
+    def set_status(
+        self,
+        activity_text,
+    ):
+        return self._submit_coroutine(
+            self._set_status(
+                activity_text
+            ),
+            "Update Discord activity",
+        )
+
+    # -------------------------------------------------
     # Servers / channels
     # -------------------------------------------------
 
