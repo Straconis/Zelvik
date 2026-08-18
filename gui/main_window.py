@@ -27,8 +27,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from config import has_environment_token
-from gui.token_dialog import TokenDialog
+from config import has_environment_token, save_discord_token
+from gui.discord_setup_wizard import DiscordSetupWizard
 from audio.windows_routing import WindowsRoutingManager
 from settings import ZelvikSettings
 
@@ -741,6 +741,12 @@ class MainWindow(QMainWindow):
         )
         layout.addWidget(
             self.youtube_status_label
+        )
+        layout.addWidget(
+            self.youtube_activity_label
+        )
+        layout.addWidget(
+            self.youtube_activity_log
         )
 
         layout.addSpacing(
@@ -1752,36 +1758,36 @@ class MainWindow(QMainWindow):
                 self,
                 "Token Controlled by .env",
                 (
-                    "Zelvik is currently "
-                    "using DISCORD_TOKEN from your .env "
-                    "file or environment.\n\n"
-                    "A token saved through this dialog "
+                    "Zelvik is currently using DISCORD_TOKEN "
+                    "from your .env file or environment.\n\n"
+                    "A token saved through Guided Discord Setup "
                     "would not override that value.\n\n"
-                    "Remove or update DISCORD_TOKEN in "
-                    ".env before using the saved Windows "
-                    "Credential Manager token."
+                    "Remove or update DISCORD_TOKEN in .env "
+                    "before using the saved Windows Credential "
+                    "Manager token."
                 ),
             )
-
             return
 
-        dialog = TokenDialog(
-            self
+        dialog = DiscordSetupWizard(
+            save_token_callback=save_discord_token,
+            parent=self,
         )
 
         result = dialog.exec()
 
-        if result != TokenDialog.Accepted:
+        if result != DiscordSetupWizard.Accepted:
             return
 
         QMessageBox.information(
             self,
-            "Discord Token Changed",
+            "Discord Setup Complete",
             (
-                "The new Discord bot token has been saved "
-                "to Windows Credential Manager.\n\n"
-                "Restart Zelvik to connect "
-                "using the new token."
+                "Your Discord bot token has been verified "
+                "and saved securely to Windows Credential "
+                "Manager.\n\n"
+                "Restart Zelvik to connect using the "
+                "new Discord bot."
             ),
         )
 
