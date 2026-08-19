@@ -1,3 +1,4 @@
+import ctypes
 import os
 import sys
 
@@ -12,6 +13,59 @@ from bot.discord_client import DiscordClient
 from config import get_discord_token
 from gui.main_window import MainWindow
 from gui.token_dialog import TokenDialog
+
+
+# ---------------------------------------------------------
+# Single-instance protection
+# ---------------------------------------------------------
+
+ZELVIK_MUTEX_NAME = r"Local\Zelvik.SingleInstance"
+_zelvik_mutex = None
+
+
+def acquire_single_instance():
+    """
+    Prevent more than one instance of Zelvik from running.
+
+    Returns True if this process owns the mutex.
+    Returns False if another Zelvik instance is already running.
+    """
+
+    global _zelvik_mutex
+
+    kernel32 = ctypes.windll.kernel32
+
+    _zelvik_mutex = kernel32.CreateMutexW(
+        None,
+        False,
+        ZELVIK_MUTEX_NAME,
+    )
+
+    if not _zelvik_mutex:
+        # If Windows could not create the mutex for some
+        # unexpected reason, allow Zelvik to continue rather
+        # than preventing the application from starting.
+        return True
+
+    ERROR_ALREADY_EXISTS = 183
+
+    if kernel32.GetLastError() == ERROR_ALREADY_EXISTS:
+        kernel32.CloseHandle(
+            _zelvik_mutex
+        )
+
+        _zelvik_mutex = None
+
+        ctypes.windll.user32.MessageBoxW(
+            None,
+            "Zelvik is already running.",
+            "Zelvik",
+            0x40,
+        )
+
+        return False
+
+    return True
 
 
 # ---------------------------------------------------------
@@ -242,6 +296,17 @@ QMessageBox QLabel {
 # ---------------------------------------------------------
 
 def main():
+    # -----------------------------------------------------
+    # Prevent multiple Zelvik instances
+    # -----------------------------------------------------
+
+    if not acquire_single_instance():
+        return 0
+
+    # -----------------------------------------------------
+    # Load Opus
+    # -----------------------------------------------------
+
     # Opus must be loaded before Discord tries to play
     # our PCM mixer.
     load_opus()
