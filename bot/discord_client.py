@@ -40,6 +40,27 @@ class DiscordClient:
         # }
         self.active_sources = {}
 
+        # -------------------------------------------------
+        # YouTube queue state
+        # -------------------------------------------------
+
+        # Queues contain UPCOMING items only.
+        # The active item remains in:
+        # active_sources[guild_id]["youtube"]
+        self.youtube_queues = {}
+
+        self.youtube_queue_lock = threading.RLock()
+
+        self.youtube_queue_counter = 0
+
+        # A manually stopped queue remains intact but does
+        # not auto-advance until Play / Resume is pressed.
+        self.youtube_queue_paused = set()
+
+        # Prevent the GUI's 500 ms timer from scheduling the
+        # same next-track operation more than once.
+        self.youtube_queue_advancing = set()
+
         @self.client.event
         async def on_ready():
             print(
@@ -111,11 +132,6 @@ class DiscordClient:
         """
         Submit a coroutine to Discord's event loop and
         report any exception raised by it.
-
-        Previously these Futures were returned to the GUI
-        but their exceptions were never inspected. That
-        allowed playback failures to appear completely
-        silent, especially in packaged PyInstaller builds.
         """
 
         if self.loop is None:
@@ -175,7 +191,7 @@ class DiscordClient:
         return future
 
     # -------------------------------------------------
-    # Discord presence / activity
+    # Discord activity
     # -------------------------------------------------
 
     async def _set_status(
@@ -183,31 +199,29 @@ class DiscordClient:
         activity_text,
     ):
         activity_text = (
-            str(activity_text).strip()
-            if activity_text is not None
-            else ""
-        )
+            activity_text or ""
+        ).strip()
 
-        activity = (
-            discord.Game(
+        if activity_text:
+            activity = discord.Game(
                 name=activity_text
             )
-            if activity_text
-            else None
-        )
+        else:
+            activity = None
 
         await self.client.change_presence(
             activity=activity
         )
 
-        print(
-            "Discord activity updated: "
-            + (
-                activity_text
-                if activity_text
-                else "(cleared)"
+        if activity_text:
+            print(
+                "Discord activity updated: "
+                f"{activity_text} 🔊"
             )
-        )
+        else:
+            print(
+                "Discord activity cleared."
+            )
 
     def set_status(
         self,
@@ -217,7 +231,7 @@ class DiscordClient:
             self._set_status(
                 activity_text
             ),
-            "Update Discord activity",
+            "Discord activity update",
         )
 
     # -------------------------------------------------
@@ -262,9 +276,6 @@ class DiscordClient:
     def get_audio_input_devices(self):
         devices = sd.query_devices()
 
-        # Prefer modern Windows audio backends while
-        # avoiding duplicate representations of the
-        # same physical/virtual device.
         priorities = {
             "Windows WASAPI": 0,
             "MME": 1,
@@ -417,6 +428,10 @@ class DiscordClient:
             guild_id
         )
 
+        self._clear_youtube_queue_state(
+            guild_id
+        )
+
         mixer = self.mixers.pop(
             guild_id,
             None,
@@ -476,6 +491,7 @@ class DiscordClient:
                 guild_id
             ] = {
                 "input": None,
+                "input2": None,
                 "youtube": None,
                 "local": [],
             }
@@ -533,17 +549,19 @@ class DiscordClient:
             )
 
     # -------------------------------------------------
-    # External audio input
+    # External audio inputs
     # -------------------------------------------------
 
-    async def _start_audio_input(
+    async def _start_audio_input_slot(
         self,
         guild_id,
         device_id,
-        volume=1.0,
+        volume,
+        state_key,
+        display_name,
     ):
         print(
-            "Starting external audio input..."
+            f"Starting {display_name.lower()}..."
         )
 
         await self._start_mixer(
@@ -559,7 +577,7 @@ class DiscordClient:
         )
 
         old_source = state[
-            "input"
+            state_key
         ]
 
         if old_source:
@@ -576,40 +594,27 @@ class DiscordClient:
             source
         )
 
-        state["input"] = source
+        state[state_key] = source
 
         print(
-            f"External input started: "
+            f"{display_name} started: "
             f"{device_id}"
         )
 
         return source
 
-    def start_audio_input(
+    def _stop_audio_input_slot(
         self,
         guild_id,
-        device_id,
-        volume=1.0,
-    ):
-        return self._submit_coroutine(
-            self._start_audio_input(
-                guild_id,
-                device_id,
-                volume,
-            ),
-            "External audio input",
-        )
-
-    def stop_audio_input(
-        self,
-        guild_id,
+        state_key,
+        display_name,
     ):
         state = self._get_source_state(
             guild_id
         )
 
         source = state[
-            "input"
+            state_key
         ]
 
         if source is None:
@@ -624,15 +629,16 @@ class DiscordClient:
                 source
             )
 
-        state["input"] = None
+        state[state_key] = None
 
         print(
-            "External input stopped."
+            f"{display_name} stopped."
         )
 
-    def set_input_volume(
+    def _set_audio_input_slot_volume(
         self,
         guild_id,
+        state_key,
         volume,
     ):
         state = self._get_source_state(
@@ -640,7 +646,7 @@ class DiscordClient:
         )
 
         source = state[
-            "input"
+            state_key
         ]
 
         if source:
@@ -649,8 +655,111 @@ class DiscordClient:
                 float(volume),
             )
 
+    # Input 1 keeps the original public method names so
+    # existing GUI code and saved behavior remain compatible.
+    async def _start_audio_input(
+        self,
+        guild_id,
+        device_id,
+        volume=1.0,
+    ):
+        return await self._start_audio_input_slot(
+            guild_id,
+            device_id,
+            volume,
+            "input",
+            "External input 1",
+        )
+
+    def start_audio_input(
+        self,
+        guild_id,
+        device_id,
+        volume=1.0,
+    ):
+        return self._submit_coroutine(
+            self._start_audio_input(
+                guild_id,
+                device_id,
+                volume,
+            ),
+            "External audio input 1",
+        )
+
+    def stop_audio_input(
+        self,
+        guild_id,
+    ):
+        self._stop_audio_input_slot(
+            guild_id,
+            "input",
+            "External input 1",
+        )
+
+    def set_input_volume(
+        self,
+        guild_id,
+        volume,
+    ):
+        self._set_audio_input_slot_volume(
+            guild_id,
+            "input",
+            volume,
+        )
+
+    # Input 2
+    async def _start_audio_input2(
+        self,
+        guild_id,
+        device_id,
+        volume=1.0,
+    ):
+        return await self._start_audio_input_slot(
+            guild_id,
+            device_id,
+            volume,
+            "input2",
+            "External input 2",
+        )
+
+    def start_audio_input2(
+        self,
+        guild_id,
+        device_id,
+        volume=1.0,
+    ):
+        return self._submit_coroutine(
+            self._start_audio_input2(
+                guild_id,
+                device_id,
+                volume,
+            ),
+            "External audio input 2",
+        )
+
+    def stop_audio_input2(
+        self,
+        guild_id,
+    ):
+        self._stop_audio_input_slot(
+            guild_id,
+            "input2",
+            "External input 2",
+        )
+
+    def set_input2_volume(
+        self,
+        guild_id,
+        volume,
+    ):
+        self._set_audio_input_slot_volume(
+            guild_id,
+            "input2",
+            volume,
+        )
+
     # -------------------------------------------------
-    # YouTube
+    # YouTube playback
     # -------------------------------------------------
 
     async def _play_youtube(
@@ -703,6 +812,11 @@ class DiscordClient:
 
         state["youtube"] = source
 
+        with self.youtube_queue_lock:
+            self.youtube_queue_paused.discard(
+                guild_id
+            )
+
         print(
             f"YouTube source started: "
             f"{youtube_url}"
@@ -753,6 +867,13 @@ class DiscordClient:
             "youtube"
         ]
 
+        # Stop pauses queue advancement but preserves
+        # upcoming items.
+        with self.youtube_queue_lock:
+            self.youtube_queue_paused.add(
+                guild_id
+            )
+
         if source is None:
             return
 
@@ -768,7 +889,7 @@ class DiscordClient:
         state["youtube"] = None
 
         print(
-            "YouTube stopped."
+            "YouTube stopped. Queue paused."
         )
 
     def set_youtube_volume(
@@ -789,6 +910,388 @@ class DiscordClient:
                 0.0,
                 float(volume),
             )
+
+    # -------------------------------------------------
+    # YouTube queue helpers
+    # -------------------------------------------------
+
+    def _get_youtube_queue(
+        self,
+        guild_id,
+    ):
+        with self.youtube_queue_lock:
+            if (
+                guild_id
+                not in self.youtube_queues
+            ):
+                self.youtube_queues[
+                    guild_id
+                ] = []
+
+            return self.youtube_queues[
+                guild_id
+            ]
+
+    def _clear_youtube_queue_state(
+        self,
+        guild_id,
+    ):
+        with self.youtube_queue_lock:
+            queue = self.youtube_queues.get(
+                guild_id
+            )
+
+            if queue is not None:
+                queue.clear()
+
+            self.youtube_queue_paused.discard(
+                guild_id
+            )
+
+            self.youtube_queue_advancing.discard(
+                guild_id
+            )
+
+    def enqueue_youtube(
+        self,
+        guild_id,
+        youtube_url,
+        volume=1.0,
+        loop=False,
+        start_time=None,
+        stop_time=None,
+        cookies_file=None,
+    ):
+        with self.youtube_queue_lock:
+            self.youtube_queue_counter += 1
+
+            entry = {
+                "id": self.youtube_queue_counter,
+                "url": youtube_url,
+                "volume": max(
+                    0.0,
+                    float(volume),
+                ),
+                "loop": bool(
+                    loop
+                ),
+                "start_time": start_time,
+                "stop_time": stop_time,
+                "cookies_file": cookies_file,
+            }
+
+            queue = self._get_youtube_queue(
+                guild_id
+            )
+
+            queue.append(
+                entry
+            )
+
+            state = self._get_source_state(
+                guild_id
+            )
+
+            source = state.get(
+                "youtube"
+            )
+
+            source_active = (
+                source is not None
+                and not bool(
+                    getattr(
+                        source,
+                        "finished",
+                        False,
+                    )
+                )
+            )
+
+            if not source_active:
+                self.youtube_queue_paused.discard(
+                    guild_id
+                )
+
+        print(
+            "YouTube queued: "
+            f"{youtube_url}"
+        )
+
+        return entry["id"]
+
+    def remove_youtube_queue_items(
+        self,
+        guild_id,
+        queue_ids,
+    ):
+        queue_ids = set(
+            queue_ids
+        )
+
+        with self.youtube_queue_lock:
+            queue = self._get_youtube_queue(
+                guild_id
+            )
+
+            queue[:] = [
+                entry
+                for entry in queue
+                if entry["id"]
+                not in queue_ids
+            ]
+
+    def clear_youtube_queue(
+        self,
+        guild_id,
+    ):
+        with self.youtube_queue_lock:
+            queue = self._get_youtube_queue(
+                guild_id
+            )
+
+            queue.clear()
+
+    def set_youtube_queue_order(
+        self,
+        guild_id,
+        queue_ids,
+    ):
+        with self.youtube_queue_lock:
+            queue = list(
+                self._get_youtube_queue(
+                    guild_id
+                )
+            )
+
+            by_id = {
+                entry["id"]: entry
+                for entry in queue
+            }
+
+            reordered = []
+
+            for queue_id in queue_ids:
+                entry = by_id.pop(
+                    queue_id,
+                    None,
+                )
+
+                if entry is not None:
+                    reordered.append(
+                        entry
+                    )
+
+            # Preserve entries added while a drag operation
+            # was underway.
+            for entry in queue:
+                if entry["id"] in by_id:
+                    reordered.append(
+                        entry
+                    )
+
+                    by_id.pop(
+                        entry["id"],
+                        None,
+                    )
+
+            self.youtube_queues[
+                guild_id
+            ] = reordered
+
+    def get_youtube_queue_snapshot(
+        self,
+        guild_id,
+    ):
+        state = self._get_source_state(
+            guild_id
+        )
+
+        source = state.get(
+            "youtube"
+        )
+
+        current = None
+
+        if (
+            source is not None
+            and not bool(
+                getattr(
+                    source,
+                    "finished",
+                    False,
+                )
+            )
+        ):
+            current = {
+                "url": getattr(
+                    source,
+                    "youtube_url",
+                    "",
+                ),
+                "status": getattr(
+                    source,
+                    "status_text",
+                    "",
+                ),
+            }
+
+        with self.youtube_queue_lock:
+            queue = [
+                dict(entry)
+                for entry in self._get_youtube_queue(
+                    guild_id
+                )
+            ]
+
+            paused = (
+                guild_id
+                in self.youtube_queue_paused
+            )
+
+        return {
+            "current": current,
+            "queue": queue,
+            "paused": paused,
+        }
+
+    def resume_youtube_queue(
+        self,
+        guild_id,
+    ):
+        with self.youtube_queue_lock:
+            self.youtube_queue_paused.discard(
+                guild_id
+            )
+
+        return self.service_youtube_queue(
+            guild_id
+        )
+
+    def service_youtube_queue(
+        self,
+        guild_id,
+    ):
+        """
+        Called by MainWindow's existing 500 ms timer.
+
+        If the current YouTube source has completed,
+        remove it and start the next queued item.
+        """
+
+        state = self._get_source_state(
+            guild_id
+        )
+
+        source = state.get(
+            "youtube"
+        )
+
+        if source is not None:
+            finished = bool(
+                getattr(
+                    source,
+                    "finished",
+                    False,
+                )
+            )
+
+            if not finished:
+                return None
+
+            mixer = self.mixers.get(
+                guild_id
+            )
+
+            if mixer:
+                try:
+                    mixer.remove_source(
+                        source
+                    )
+                except Exception:
+                    pass
+
+            state["youtube"] = None
+
+        with self.youtube_queue_lock:
+            if (
+                guild_id
+                in self.youtube_queue_paused
+            ):
+                return None
+
+            if (
+                guild_id
+                in self.youtube_queue_advancing
+            ):
+                return None
+
+            queue = self._get_youtube_queue(
+                guild_id
+            )
+
+            if not queue:
+                return None
+
+            entry = queue.pop(
+                0
+            )
+
+            self.youtube_queue_advancing.add(
+                guild_id
+            )
+
+        async def start_next():
+            try:
+                print(
+                    "Starting next YouTube "
+                    "queue item..."
+                )
+
+                await self._play_youtube(
+                    guild_id,
+                    entry["url"],
+                    volume=entry[
+                        "volume"
+                    ],
+                    loop=entry[
+                        "loop"
+                    ],
+                    start_time=entry[
+                        "start_time"
+                    ],
+                    stop_time=entry[
+                        "stop_time"
+                    ],
+                    cookies_file=entry[
+                        "cookies_file"
+                    ],
+                )
+
+            except Exception:
+                # If Zelvik could not even create/start the
+                # source, restore it to the front of queue.
+                with self.youtube_queue_lock:
+                    queue = self._get_youtube_queue(
+                        guild_id
+                    )
+
+                    queue.insert(
+                        0,
+                        entry,
+                    )
+
+                raise
+
+            finally:
+                with self.youtube_queue_lock:
+                    self.youtube_queue_advancing.discard(
+                        guild_id
+                    )
+
+        return self._submit_coroutine(
+            start_next(),
+            "YouTube queue playback",
+        )
 
     # -------------------------------------------------
     # Local files
@@ -934,6 +1437,7 @@ class DiscordClient:
             return
 
         state["input"] = None
+        state["input2"] = None
         state["youtube"] = None
         state["local"].clear()
 
@@ -949,6 +1453,10 @@ class DiscordClient:
             mixer.stop_all()
 
         self._stop_all_sources(
+            guild_id
+        )
+
+        self._clear_youtube_queue_state(
             guild_id
         )
 
@@ -979,6 +1487,11 @@ class DiscordClient:
 
         self.mixers.clear()
         self.active_sources.clear()
+
+        with self.youtube_queue_lock:
+            self.youtube_queues.clear()
+            self.youtube_queue_paused.clear()
+            self.youtube_queue_advancing.clear()
 
         for voice_client in list(
             self.client.voice_clients

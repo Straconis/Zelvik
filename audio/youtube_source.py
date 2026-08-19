@@ -1,4 +1,5 @@
 import os
+import shutil
 import subprocess
 import tempfile
 import threading
@@ -36,6 +37,7 @@ class YouTubeSource:
 
         self.start_time = start_time
         self.stop_time = stop_time
+
         self.cookies_file = (
             os.path.abspath(cookies_file)
             if cookies_file
@@ -72,6 +74,10 @@ class YouTubeSource:
         self.error_details = None
         self.error_retryable = False
         self.error_reported = False
+
+        # Temporary media downloaded by yt-dlp.
+        self.temp_dir = None
+        self.media_file = None
 
     # -------------------------------------------------
     # Windows subprocess handling
@@ -124,11 +130,11 @@ class YouTubeSource:
 
         unavailable_terms = (
             "video unavailable",
+            "this video is unavailable",
             "private video",
             "video is private",
             "removed by the uploader",
             "has been removed",
-            "not available",
         )
 
         temporary_terms = (
@@ -165,6 +171,19 @@ class YouTubeSource:
                 "unavailable",
                 "This YouTube video is unavailable.",
                 False,
+            )
+
+        if (
+            "requested format is not available"
+            in text
+        ):
+            return (
+                "format",
+                (
+                    "YouTube did not provide a playable "
+                    "audio format."
+                ),
+                True,
             )
 
         if (
@@ -252,18 +271,23 @@ class YouTubeSource:
 
             self.finished = False
             self.started = True
+
             self.last_error = None
+
             self.error_kind = None
             self.error_message = None
             self.error_details = None
             self.error_retryable = False
             self.error_reported = False
+
             self.auth_in_use = False
 
         self.stop_event.clear()
 
         with self.buffer_lock:
             self.buffer.clear()
+
+        self._cleanup_temp_media()
 
         self.worker_thread = threading.Thread(
             target=self._worker,
@@ -297,7 +321,10 @@ class YouTubeSource:
             return {
                 "ok": False,
                 "authenticated": False,
-                "message": "The selected cookies file does not exist.",
+                "message": (
+                    "The selected cookies file "
+                    "does not exist."
+                ),
                 "details": path,
             }
 
@@ -314,11 +341,15 @@ class YouTubeSource:
             return {
                 "ok": False,
                 "authenticated": False,
-                "message": "Zelvik could not read the selected cookies file.",
+                "message": (
+                    "Zelvik could not read "
+                    "the selected cookies file."
+                ),
                 "details": str(error),
             }
 
         youtube_cookie_count = 0
+
         auth_cookie_names = {
             "SID",
             "HSID",
@@ -330,6 +361,7 @@ class YouTubeSource:
             "__Secure-1PSID",
             "__Secure-3PSID",
         }
+
         found_auth_names = set()
 
         for raw_line in lines:
@@ -364,10 +396,14 @@ class YouTubeSource:
             return {
                 "ok": True,
                 "authenticated": True,
-                "message": "Signed-in YouTube cookies were found.",
+                "message": (
+                    "Signed-in YouTube cookies were found."
+                ),
                 "details": (
-                    f"Found {youtube_cookie_count} YouTube/Google cookies "
-                    f"and {len(found_auth_names)} recognized sign-in cookies."
+                    f"Found {youtube_cookie_count} "
+                    "YouTube/Google cookies "
+                    f"and {len(found_auth_names)} "
+                    "recognized sign-in cookies."
                 ),
             }
 
@@ -376,11 +412,13 @@ class YouTubeSource:
                 "ok": True,
                 "authenticated": False,
                 "message": (
-                    "YouTube cookies were found, but Zelvik could not "
-                    "confirm a signed-in session."
+                    "YouTube cookies were found, but "
+                    "Zelvik could not confirm a "
+                    "signed-in session."
                 ),
                 "details": (
-                    f"Found {youtube_cookie_count} YouTube/Google cookies "
+                    f"Found {youtube_cookie_count} "
+                    "YouTube/Google cookies "
                     "but no recognized sign-in cookies."
                 ),
             }
@@ -388,36 +426,101 @@ class YouTubeSource:
         return {
             "ok": True,
             "authenticated": False,
-            "message": "No YouTube or Google cookies were found in this file.",
+            "message": (
+                "No YouTube or Google cookies "
+                "were found in this file."
+            ),
             "details": (
-                "The file is readable, but it does not appear to contain "
-                "YouTube authentication cookies."
+                "The file is readable, but it does "
+                "not appear to contain YouTube "
+                "authentication cookies."
             ),
         }
 
     # -------------------------------------------------
-    # yt-dlp resolution
+    # yt-dlp download
     # -------------------------------------------------
 
-    def _resolve_stream(
+    def _download_progress_hook(
+        self,
+        status,
+    ):
+        """
+        Stop a yt-dlp download if the source has been
+        stopped from Zelvik.
+        """
+
+        if self.stop_event.is_set():
+            raise yt_dlp.utils.DownloadCancelled(
+                "YouTube download stopped."
+            )
+
+    def _download_media(
         self,
         use_auth=False,
     ):
+        """
+        Download YouTube audio using yt-dlp itself.
+
+        yt-dlp handles:
+        - mweb playback
+        - PO-token generation
+        - Deno/EJS challenge solving
+        - YouTube HTTP/range requests
+
+        FFmpeg only sees the finished local file.
+        """
+
+        self._cleanup_temp_media()
+
         if use_auth:
             self._set_status(
-                "YouTube: Resolving stream with authentication..."
+                "YouTube: Downloading stream "
+                "with authentication..."
             )
         else:
             self._set_status(
-                "YouTube: Resolving stream..."
+                "YouTube: Preparing stream..."
             )
 
+        self.temp_dir = tempfile.mkdtemp(
+            prefix="zelvik_youtube_"
+        )
+
+        output_template = os.path.join(
+            self.temp_dir,
+            "media.%(ext)s",
+        )
+
         ydl_options = {
-            "format": "bestaudio*/best",
+            "format": "bestaudio/best",
             "quiet": True,
             "no_warnings": True,
             "noplaylist": True,
             "cachedir": False,
+
+            # Allow yt-dlp to retrieve the EJS solver
+            # required for YouTube JS challenges.
+            "remote_components": {
+                "ejs:github",
+            },
+
+            # Use mweb so bgutil can generate a matching
+            # GVS PO token without launching a browser.
+            "extractor_args": {
+                "youtube": {
+                    "player_client": [
+                        "mweb",
+                    ],
+                },
+            },
+
+            # Download into Zelvik's temporary folder.
+            "outtmpl": output_template,
+
+            "progress_hooks": [
+                self._download_progress_hook,
+            ],
         }
 
         if (
@@ -433,110 +536,132 @@ class YouTubeSource:
         ) as ydl:
             info = ydl.extract_info(
                 self.youtube_url,
-                download=False,
+                download=True,
             )
 
-        if info is None:
-            raise RuntimeError(
-                "yt-dlp returned no video information."
-            )
-
-        if "entries" in info:
-            entries = [
-                entry
-                for entry in info["entries"]
-                if entry
-            ]
-
-            if not entries:
+            if info is None:
                 raise RuntimeError(
-                    "No playable entries were found."
+                    "yt-dlp returned no video information."
                 )
 
-            info = entries[0]
+            if "entries" in info:
+                entries = [
+                    entry
+                    for entry in info["entries"]
+                    if entry
+                ]
 
-        stream_url = info.get(
-            "url"
+                if not entries:
+                    raise RuntimeError(
+                        "No playable entries were found."
+                    )
+
+                info = entries[0]
+
+            title = info.get(
+                "title",
+                "YouTube audio",
+            )
+
+            candidate_files = []
+
+            requested_downloads = (
+                info.get(
+                    "requested_downloads"
+                )
+                or []
+            )
+
+            for download_info in requested_downloads:
+                filepath = download_info.get(
+                    "filepath"
+                )
+
+                if filepath:
+                    candidate_files.append(
+                        filepath
+                    )
+
+            prepared_filename = (
+                ydl.prepare_filename(
+                    info
+                )
+            )
+
+            if prepared_filename:
+                candidate_files.append(
+                    prepared_filename
+                )
+
+        # First try filenames reported directly by yt-dlp.
+        for candidate in candidate_files:
+            if (
+                candidate
+                and os.path.isfile(
+                    candidate
+                )
+            ):
+                self.media_file = os.path.abspath(
+                    candidate
+                )
+
+                return (
+                    self.media_file,
+                    title,
+                )
+
+        # Fallback: find the actual completed file in the
+        # temporary directory.
+        files = []
+
+        for name in os.listdir(
+            self.temp_dir
+        ):
+            path = os.path.join(
+                self.temp_dir,
+                name,
+            )
+
+            if not os.path.isfile(
+                path
+            ):
+                continue
+
+            if name.endswith(
+                ".part"
+            ):
+                continue
+
+            if name.endswith(
+                ".ytdl"
+            ):
+                continue
+
+            files.append(
+                path
+            )
+
+        if not files:
+            raise RuntimeError(
+                "yt-dlp completed but no downloaded "
+                "media file was found."
+            )
+
+        files.sort(
+            key=lambda path: (
+                os.path.getsize(
+                    path
+                )
+            ),
+            reverse=True,
         )
 
-        if not stream_url:
-            formats = info.get(
-                "formats",
-                [],
-            )
-
-            audio_formats = []
-
-            for fmt in formats:
-                url = fmt.get(
-                    "url"
-                )
-
-                acodec = fmt.get(
-                    "acodec"
-                )
-
-                vcodec = fmt.get(
-                    "vcodec"
-                )
-
-                if not url:
-                    continue
-
-                if (
-                    acodec
-                    and acodec != "none"
-                    and (
-                        not vcodec
-                        or vcodec == "none"
-                    )
-                ):
-                    audio_formats.append(
-                        fmt
-                    )
-
-            if not audio_formats:
-                raise RuntimeError(
-                    "No playable audio format was found."
-                )
-
-            audio_formats.sort(
-                key=lambda fmt: (
-                    fmt.get("abr") or 0,
-                    fmt.get("tbr") or 0,
-                ),
-                reverse=True,
-            )
-
-            selected_format = (
-                audio_formats[0]
-            )
-
-            stream_url = (
-                selected_format["url"]
-            )
-
-            headers = (
-                selected_format.get(
-                    "http_headers",
-                    {},
-                )
-            )
-
-        else:
-            headers = info.get(
-                "http_headers",
-                {},
-            )
-
-        title = info.get(
-            "title",
-            "YouTube audio",
+        self.media_file = os.path.abspath(
+            files[0]
         )
 
         return (
-            stream_url,
-            headers,
+            self.media_file,
             title,
         )
 
@@ -546,8 +671,7 @@ class YouTubeSource:
 
     def _build_ffmpeg_command(
         self,
-        stream_url,
-        headers,
+        media_file,
     ):
         command = [
             "ffmpeg",
@@ -555,40 +679,9 @@ class YouTubeSource:
             "-hide_banner",
             "-loglevel",
             "error",
+            "-i",
+            media_file,
         ]
-
-        if headers:
-            header_lines = []
-
-            for key, value in headers.items():
-                if value is None:
-                    continue
-
-                header_lines.append(
-                    f"{key}: {value}"
-                )
-
-            if header_lines:
-                header_string = (
-                    "\r\n".join(
-                        header_lines
-                    )
-                    + "\r\n"
-                )
-
-                command.extend(
-                    [
-                        "-headers",
-                        header_string,
-                    ]
-                )
-
-        command.extend(
-            [
-                "-i",
-                stream_url,
-            ]
-        )
 
         if (
             self.start_time
@@ -651,8 +744,7 @@ class YouTubeSource:
 
     def _start_ffmpeg(
         self,
-        stream_url,
-        headers,
+        media_file,
     ):
         self._cleanup_process()
 
@@ -662,8 +754,7 @@ class YouTubeSource:
 
         command = (
             self._build_ffmpeg_command(
-                stream_url,
-                headers,
+                media_file
             )
         )
 
@@ -686,15 +777,29 @@ class YouTubeSource:
         retry_count = 0
         use_auth = False
 
+        # ---------------------------------------------
+        # Download using yt-dlp
+        # ---------------------------------------------
+
         while not self.stop_event.is_set():
             try:
                 (
-                    stream_url,
-                    headers,
+                    media_file,
                     title,
-                ) = self._resolve_stream(
+                ) = self._download_media(
                     use_auth=use_auth
                 )
+
+            except yt_dlp.utils.DownloadCancelled:
+                self._cleanup_temp_media()
+
+                self._set_status(
+                    "YouTube: Stopped"
+                )
+
+                self._mark_finished()
+
+                return
 
             except Exception as error:
                 self.last_error = str(
@@ -723,8 +828,9 @@ class YouTubeSource:
                     retry_count = 0
 
                     self._set_status(
-                        "YouTube: Authentication required — "
-                        "retrying with saved cookies..."
+                        "YouTube: Authentication "
+                        "required — retrying with "
+                        "saved cookies..."
                     )
 
                     if self._wait_or_stop(
@@ -739,9 +845,11 @@ class YouTubeSource:
                     and not self.cookies_file
                 ):
                     message = (
-                        "This video requires YouTube authentication. "
-                        "Import cookies.txt in Zelvik and try again."
+                        "This video requires YouTube "
+                        "authentication. Import cookies.txt "
+                        "in Zelvik and try again."
                     )
+
                     retryable = False
 
                 if (
@@ -752,7 +860,7 @@ class YouTubeSource:
                     retry_count += 1
 
                     self._set_status(
-                        "YouTube: Resolve failed — "
+                        "YouTube: Download failed — "
                         f"retrying "
                         f"{retry_count}/"
                         f"{self.max_retries}..."
@@ -773,22 +881,42 @@ class YouTubeSource:
                 )
 
                 print(
-                    "YouTube resolve error: "
+                    "YouTube download error: "
                     f"{error}"
                 )
+
+                self._cleanup_temp_media()
 
                 self._mark_finished()
 
                 return
 
-            if self.stop_event.is_set():
-                break
+            break
 
+        if self.stop_event.is_set():
+            self._cleanup_temp_media()
+
+            self._set_status(
+                "YouTube: Stopped"
+            )
+
+            self._mark_finished()
+
+            return
+
+        # ---------------------------------------------
+        # Local playback
+        # ---------------------------------------------
+
+        retry_count = 0
+
+        while not self.stop_event.is_set():
             if use_auth:
                 self.auth_in_use = True
 
                 self._set_status(
-                    f"YouTube: Playing (authenticated) — {title}"
+                    "YouTube: Playing "
+                    f"(authenticated) — {title}"
                 )
             else:
                 self.auth_in_use = False
@@ -799,8 +927,7 @@ class YouTubeSource:
 
             try:
                 self._start_ffmpeg(
-                    stream_url,
-                    headers,
+                    media_file
                 )
 
             except Exception as error:
@@ -822,6 +949,8 @@ class YouTubeSource:
                     "YouTube FFmpeg start error: "
                     f"{error}"
                 )
+
+                self._cleanup_temp_media()
 
                 self._mark_finished()
 
@@ -872,80 +1001,8 @@ class YouTubeSource:
                 error_text,
             ) = self._finish_process()
 
-            error_lower = (
-                error_text.lower()
-            )
-
-            is_403 = (
-                "403" in error_lower
-                or "forbidden" in error_lower
-                or (
-                    "access denied"
-                    in error_lower
-                )
-            )
-
             # -----------------------------------------
-            # 403 recovery
-            # -----------------------------------------
-
-            if is_403:
-                self.last_error = (
-                    error_text.strip()
-                )
-
-                if (
-                    retry_count
-                    < self.max_retries
-                ):
-                    retry_count += 1
-
-                    self._set_status(
-                        "YouTube: 403 received — "
-                        "refreshing stream "
-                        f"{retry_count}/"
-                        f"{self.max_retries}..."
-                    )
-
-                    print(
-                        "YouTube media URL returned "
-                        "HTTP 403. Discarding URL and "
-                        "re-resolving original video."
-                    )
-
-                    if self._wait_or_stop(
-                        1.0
-                    ):
-                        break
-
-                    continue
-
-                self._set_error(
-                    kind="http_403",
-                    message=(
-                        "YouTube denied access to the media "
-                        "stream after multiple retries."
-                    ),
-                    details=error_text.strip(),
-                    retryable=True,
-                )
-
-                print(
-                    "YouTube playback failed after "
-                    "all 403 retries."
-                )
-
-                if error_text:
-                    print(
-                        error_text.strip()
-                    )
-
-                self._mark_finished()
-
-                return
-
-            # -----------------------------------------
-            # Other FFmpeg errors
+            # FFmpeg errors
             # -----------------------------------------
 
             if (
@@ -982,32 +1039,39 @@ class YouTubeSource:
                         error_text.strip()
                     )
 
+                self._cleanup_temp_media()
+
                 self._mark_finished()
 
                 return
 
             # -----------------------------------------
-            # Normal completion
+            # Loop
             # -----------------------------------------
 
             if self.loop:
-                retry_count = 0
-
                 self._set_status(
                     "YouTube: Looping..."
                 )
 
                 continue
 
+            # -----------------------------------------
+            # Normal completion
+            # -----------------------------------------
+
             self._set_status(
                 "YouTube: Finished"
             )
+
+            self._cleanup_temp_media()
 
             self._mark_finished()
 
             return
 
         self._cleanup_process()
+        self._cleanup_temp_media()
 
         if self.stop_event.is_set():
             self._set_status(
@@ -1206,6 +1270,34 @@ class YouTubeSource:
                 pass
 
     # -------------------------------------------------
+    # Temporary media cleanup
+    # -------------------------------------------------
+
+    def _cleanup_temp_media(self):
+        self.media_file = None
+
+        temp_dir = (
+            self.temp_dir
+        )
+
+        self.temp_dir = None
+
+        if (
+            temp_dir
+            and os.path.isdir(
+                temp_dir
+            )
+        ):
+            try:
+                shutil.rmtree(
+                    temp_dir,
+                    ignore_errors=True,
+                )
+
+            except Exception:
+                pass
+
+    # -------------------------------------------------
     # Utility
     # -------------------------------------------------
 
@@ -1235,6 +1327,8 @@ class YouTubeSource:
 
         with self.buffer_lock:
             self.buffer.clear()
+
+        self._cleanup_temp_media()
 
         self._set_status(
             "YouTube: Stopped"
