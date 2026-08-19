@@ -32,6 +32,11 @@ from gui.discord_setup_wizard import DiscordSetupWizard
 from gui.youtube_queue_window import YouTubeQueueWindow
 from audio.windows_routing import WindowsRoutingManager
 from settings import ZelvikSettings
+from updater.update_client import (
+    check_for_update,
+    download_installer,
+    launch_updater,
+)
 from version import APP_VERSION
 
 
@@ -562,6 +567,22 @@ class MainWindow(QMainWindow):
             "Exit"
         )
 
+        # =================================================
+        # Updates
+        # =================================================
+
+        self.check_updates_button = QPushButton(
+            "Check for Updates"
+        )
+
+        self.update_status_label = QLabel(
+            f"Current version: {APP_VERSION}"
+        )
+
+        self.update_status_label.setWordWrap(
+            True
+        )
+
         self._build_settings_dialog()
         self._apply_input_identity_styles()
 
@@ -721,7 +742,6 @@ class MainWindow(QMainWindow):
 
         layout = QVBoxLayout()
 
-        # Connection summary
         layout.addWidget(
             self.status_label
         )
@@ -757,7 +777,6 @@ class MainWindow(QMainWindow):
             12
         )
 
-        # Discord session controls
         layout.addWidget(
             self.guild_label
         )
@@ -778,7 +797,6 @@ class MainWindow(QMainWindow):
             16
         )
 
-        # External input: device selection now lives in Settings.
         layout.addWidget(
             self.input_section_label
         )
@@ -812,7 +830,6 @@ class MainWindow(QMainWindow):
             16
         )
 
-        # YouTube session controls
         layout.addWidget(
             self.youtube_section_label
         )
@@ -842,7 +859,6 @@ class MainWindow(QMainWindow):
             16
         )
 
-        # Local audio
         layout.addWidget(
             self.local_section_label
         )
@@ -863,7 +879,6 @@ class MainWindow(QMainWindow):
             16
         )
 
-        # Master
         layout.addWidget(
             self.master_section_label
         )
@@ -1054,6 +1069,10 @@ class MainWindow(QMainWindow):
             self.apply_discord_status
         )
 
+        self.check_updates_button.clicked.connect(
+            self.check_for_updates
+        )
+
         self.exit_button.clicked.connect(
             self.close
         )
@@ -1186,6 +1205,7 @@ class MainWindow(QMainWindow):
         # -------------------------------------------------
         # Discord
         # -------------------------------------------------
+
         discord_group = QGroupBox(
             "Discord"
         )
@@ -1228,6 +1248,7 @@ class MainWindow(QMainWindow):
         # -------------------------------------------------
         # External audio input
         # -------------------------------------------------
+
         input_group = QGroupBox(
             "External Audio Inputs"
         )
@@ -1257,6 +1278,7 @@ class MainWindow(QMainWindow):
         # -------------------------------------------------
         # YouTube authentication
         # -------------------------------------------------
+
         youtube_group = QGroupBox(
             "YouTube Authentication"
         )
@@ -1320,6 +1342,7 @@ class MainWindow(QMainWindow):
         # -------------------------------------------------
         # Windows audio routing
         # -------------------------------------------------
+
         routing_group = QGroupBox(
             "Windows Audio Routing"
         )
@@ -1378,6 +1401,32 @@ class MainWindow(QMainWindow):
             routing_group
         )
 
+        # -------------------------------------------------
+        # Updates
+        # -------------------------------------------------
+
+        updates_group = QGroupBox(
+            "Updates"
+        )
+
+        updates_layout = QVBoxLayout()
+
+        updates_layout.addWidget(
+            self.update_status_label
+        )
+
+        updates_layout.addWidget(
+            self.check_updates_button
+        )
+
+        updates_group.setLayout(
+            updates_layout
+        )
+
+        settings_layout.addWidget(
+            updates_group
+        )
+
         settings_layout.addStretch()
 
         close_row = QHBoxLayout()
@@ -1399,7 +1448,6 @@ class MainWindow(QMainWindow):
             close_row
         )
 
-
     def toggle_youtube_auth_details(
         self,
         checked,
@@ -1417,6 +1465,182 @@ class MainWindow(QMainWindow):
         self.settings_dialog.show()
         self.settings_dialog.raise_()
         self.settings_dialog.activateWindow()
+
+    # =================================================
+    # Updates
+    # =================================================
+
+    def check_for_updates(self):
+        self.check_updates_button.setEnabled(
+            False
+        )
+
+        self.update_status_label.setText(
+            "Checking GitHub for updates..."
+        )
+
+        QApplication.processEvents()
+
+        try:
+            update = check_for_update(
+                APP_VERSION
+            )
+
+        except Exception as error:
+            self.update_status_label.setText(
+                "Update check failed."
+            )
+
+            QMessageBox.warning(
+                self,
+                "Zelvik Update",
+                (
+                    "Zelvik could not check for updates.\n\n"
+                    f"{error}"
+                ),
+            )
+
+            self.check_updates_button.setEnabled(
+                True
+            )
+
+            return
+
+        status = update.get(
+            "status"
+        )
+
+        if status == "current":
+            self.update_status_label.setText(
+                f"Zelvik {APP_VERSION} is up to date."
+            )
+
+            QMessageBox.information(
+                self,
+                "Zelvik Update",
+                (
+                    "You're running the latest version "
+                    "of Zelvik.\n\n"
+                    f"Version: {APP_VERSION}"
+                ),
+            )
+
+            self.check_updates_button.setEnabled(
+                True
+            )
+
+            return
+
+        if status == "missing_installer":
+            latest_version = update.get(
+                "latest_version",
+                "Unknown",
+            )
+
+            self.update_status_label.setText(
+                f"{latest_version} is available, "
+                "but no installer was found."
+            )
+
+            QMessageBox.warning(
+                self,
+                "Zelvik Update",
+                (
+                    f"Zelvik {latest_version} is available, "
+                    "but that GitHub release does not contain "
+                    "a Zelvik installer."
+                ),
+            )
+
+            self.check_updates_button.setEnabled(
+                True
+            )
+
+            return
+
+        if status != "update_available":
+            self.update_status_label.setText(
+                "Unable to determine update status."
+            )
+
+            self.check_updates_button.setEnabled(
+                True
+            )
+
+            return
+
+        latest_version = update.get(
+            "latest_version",
+            "Unknown",
+        )
+
+        self.update_status_label.setText(
+            f"Update available: {latest_version}"
+        )
+
+        answer = QMessageBox.question(
+            self,
+            "Zelvik Update Available",
+            (
+                "A new version of Zelvik is available.\n\n"
+                f"Current version: {APP_VERSION}\n"
+                f"Available version: {latest_version}\n\n"
+                "Download and install it now?"
+            ),
+            QMessageBox.Yes
+            | QMessageBox.No,
+            QMessageBox.Yes,
+        )
+
+        if answer != QMessageBox.Yes:
+            self.check_updates_button.setEnabled(
+                True
+            )
+
+            return
+
+        self.update_status_label.setText(
+            f"Downloading Zelvik {latest_version}..."
+        )
+
+        QApplication.processEvents()
+
+        try:
+            installer_path = download_installer(
+                update
+            )
+
+            self.update_status_label.setText(
+                "Download complete. Starting updater..."
+            )
+
+            QApplication.processEvents()
+
+            launch_updater(
+                installer_path
+            )
+
+        except Exception as error:
+            self.update_status_label.setText(
+                "Update failed."
+            )
+
+            QMessageBox.critical(
+                self,
+                "Zelvik Update Failed",
+                (
+                    "Zelvik could not prepare the update.\n\n"
+                    f"{error}"
+                ),
+            )
+
+            self.check_updates_button.setEnabled(
+                True
+            )
+
+            return
+
+        self.close()
 
     def apply_discord_status(
         self,
@@ -2188,7 +2412,6 @@ class MainWindow(QMainWindow):
                 guild_id,
                 value / 100.0,
             )
-
 
     def start_audio_input2(self):
         if not self.require_voice_connection(
@@ -3172,8 +3395,6 @@ class MainWindow(QMainWindow):
             )
 
         if not result.get("ok"):
-            # Restore the control to the verified Windows state if the
-            # requested operation failed.
             actual_routed = (
                 self.windows_routing
                 .route_matches(
@@ -3215,7 +3436,6 @@ class MainWindow(QMainWindow):
                 ),
             )
 
-        # Re-read Windows rather than assuming the click succeeded.
         self.update_windows_routing_status()
         self.update_readiness_status()
 
@@ -3246,12 +3466,10 @@ class MainWindow(QMainWindow):
     def update_readiness_status(
         self,
     ):
-        # Discord connection: use discord.py's actual client state.
         discord_connected = bool(
             self.discord.client.is_ready()
         )
 
-        # Voice connection: reuse MainWindow's existing helper.
         channel_joined = (
             self.is_voice_connected()
         )
@@ -3324,8 +3542,6 @@ class MainWindow(QMainWindow):
             )
         )
 
-        # Keep the routing controls/status synchronized with the
-        # actual persisted Windows route without requiring Refresh.
         self.routing_toggle_button.blockSignals(
             True
         )
@@ -3378,7 +3594,6 @@ class MainWindow(QMainWindow):
                     "an audio session."
                 )
 
-        # Determine which Zelvik source paths are actually active.
         input_active = False
         input2_active = False
         youtube_active = False
@@ -3435,10 +3650,6 @@ class MainWindow(QMainWindow):
             or local_active
         )
 
-        # Windows app routing matters while using external input,
-        # and while Zelvik is idle so the user can verify the route
-        # before starting a source. It becomes irrelevant only when
-        # YouTube or local playback is the active source.
         routing_required = (
             input_active
             or input2_active
@@ -3522,8 +3733,6 @@ class MainWindow(QMainWindow):
             )
 
         else:
-            # Routing is irrelevant for YouTube/local sources because
-            # Zelvik itself is already feeding those into Discord.
             self.routing_ready_label.setText(
                 "⚪ Routing"
             )
