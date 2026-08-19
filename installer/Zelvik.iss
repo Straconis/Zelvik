@@ -1,5 +1,5 @@
 #define MyAppName "Zelvik"
-#define MyAppVersion "1.5.0"
+#define MyAppVersion "1.5.1"
 #define MyAppPublisher "Zelvik"
 #define MyAppExeName "Zelvik1.5.exe"
 #define MyAppDebugExeName "Zelvik1.5Debug.exe"

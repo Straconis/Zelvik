@@ -7,8 +7,8 @@ import urllib.error
 import urllib.request
 
 
-GITHUB_OWNER = "straconis"
-GITHUB_REPO = "dark-between-audio"
+GITHUB_OWNER = "Straconis"
+GITHUB_REPO = "Zelvik"
 
 LATEST_RELEASE_URL = (
     f"https://api.github.com/repos/"
@@ -296,25 +296,56 @@ def download_installer(update):
 
 def launch_updater(installer_path):
     """
-    Launch the installed ZelvikUpdater.exe.
+    Launch ZelvikUpdater.exe.
 
-    When running as an installed PyInstaller application,
-    sys.executable points to Zelvik.exe.
+    For a normal installed Zelvik build, the updater and
+    Zelvik.exe live beside the running executable.
+
+    For a development or versioned test build, the updater
+    can live beside the development executable while the
+    update target remains the installed production copy.
     """
 
-    app_directory = os.path.dirname(
+    current_directory = os.path.dirname(
         sys.executable
     )
 
     updater_path = os.path.join(
-        app_directory,
+        current_directory,
         "ZelvikUpdater.exe",
     )
 
+    # -----------------------------------------------------
+    # Normal installed Zelvik target
+    # -----------------------------------------------------
+
     zelvik_path = os.path.join(
-        app_directory,
+        current_directory,
         "Zelvik.exe",
     )
+
+    # -----------------------------------------------------
+    # Development / versioned-build fallback
+    # -----------------------------------------------------
+
+    if not os.path.isfile(
+        zelvik_path
+    ):
+        local_app_data = os.environ.get(
+            "LOCALAPPDATA"
+        )
+
+        if local_app_data:
+            zelvik_path = os.path.join(
+                local_app_data,
+                "Programs",
+                "Zelvik",
+                "Zelvik.exe",
+            )
+
+    # -----------------------------------------------------
+    # Validation
+    # -----------------------------------------------------
 
     if not os.path.isfile(
         updater_path
@@ -327,8 +358,12 @@ def launch_updater(installer_path):
         zelvik_path
     ):
         raise RuntimeError(
-            "Zelvik.exe could not be found."
+            "The installed Zelvik.exe could not be found."
         )
+
+    # -----------------------------------------------------
+    # Launch updater
+    # -----------------------------------------------------
 
     subprocess.Popen(
         [
@@ -336,5 +371,5 @@ def launch_updater(installer_path):
             installer_path,
             zelvik_path,
         ],
-        cwd=app_directory,
+        cwd=current_directory,
     )

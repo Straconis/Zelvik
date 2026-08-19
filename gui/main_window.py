@@ -2,8 +2,11 @@ import os
 import shutil
 
 from PySide6.QtCore import (
+    QObject,
+    QThread,
     Qt,
     QTimer,
+    Signal,
 )
 
 from PySide6.QtWidgets import (
@@ -38,6 +41,28 @@ from updater.update_client import (
     launch_updater,
 )
 from version import APP_VERSION
+
+
+class UpdateCheckWorker(QObject):
+    finished = Signal(object)
+    failed = Signal(str)
+
+    def run(self):
+        try:
+            result = check_for_update(
+                APP_VERSION
+            )
+
+        except Exception as error:
+            self.failed.emit(
+                str(error)
+            )
+
+            return
+
+        self.finished.emit(
+            result
+        )
 
 
 class MainWindow(QMainWindow):
@@ -583,6 +608,23 @@ class MainWindow(QMainWindow):
             True
         )
 
+        saved_auto_check = self.settings.value(
+            "updates/auto_check",
+            True,
+            type=bool,
+        )
+
+        self.auto_check_updates_checkbox = QCheckBox(
+            "Automatically check for updates on startup"
+        )
+
+        self.auto_check_updates_checkbox.setChecked(
+            saved_auto_check
+        )
+
+        self.update_check_thread = None
+        self.update_check_worker = None
+
         self._build_settings_dialog()
         self._apply_input_identity_styles()
 
@@ -1073,6 +1115,10 @@ class MainWindow(QMainWindow):
             self.check_for_updates
         )
 
+        self.auto_check_updates_checkbox.toggled.connect(
+            self.save_auto_update_check
+        )
+
         self.exit_button.clicked.connect(
             self.close
         )
@@ -1094,6 +1140,12 @@ class MainWindow(QMainWindow):
         )
 
         self.refresh_windows_routing()
+
+        if self.auto_check_updates_checkbox.isChecked():
+            QTimer.singleShot(
+                3000,
+                self.start_automatic_update_check,
+            )
 
     def _apply_input_identity_styles(self):
         input1_color = "#4da3ff"
@@ -1412,6 +1464,10 @@ class MainWindow(QMainWindow):
         updates_layout = QVBoxLayout()
 
         updates_layout.addWidget(
+            self.auto_check_updates_checkbox
+        )
+
+        updates_layout.addWidget(
             self.update_status_label
         )
 
@@ -1469,6 +1525,168 @@ class MainWindow(QMainWindow):
     # =================================================
     # Updates
     # =================================================
+
+    def save_auto_update_check(
+        self,
+        checked,
+    ):
+        self.settings.setValue(
+            "updates/auto_check",
+            checked,
+        )
+
+    def start_automatic_update_check(self):
+        if self.shutting_down:
+            return
+
+        if not self.auto_check_updates_checkbox.isChecked():
+            return
+
+        if (
+            self.update_check_thread is not None
+            and self.update_check_thread.isRunning()
+        ):
+            return
+
+        self.update_check_thread = QThread(
+            self
+        )
+
+        self.update_check_worker = (
+            UpdateCheckWorker()
+        )
+
+        self.update_check_worker.moveToThread(
+            self.update_check_thread
+        )
+
+        self.update_check_thread.started.connect(
+            self.update_check_worker.run
+        )
+
+        self.update_check_worker.finished.connect(
+            self.automatic_update_check_finished
+        )
+
+        self.update_check_worker.failed.connect(
+            self.automatic_update_check_failed
+        )
+
+        self.update_check_worker.finished.connect(
+            self.update_check_thread.quit
+        )
+
+        self.update_check_worker.failed.connect(
+            self.update_check_thread.quit
+        )
+
+        self.update_check_thread.finished.connect(
+            self.update_check_worker.deleteLater
+        )
+
+        self.update_check_thread.finished.connect(
+            self.update_check_thread.deleteLater
+        )
+
+        self.update_check_thread.finished.connect(
+            self._automatic_update_thread_finished
+        )
+
+        self.update_check_thread.start()
+
+    def _automatic_update_thread_finished(self):
+        self.update_check_worker = None
+        self.update_check_thread = None
+
+    def automatic_update_check_failed(
+        self,
+        error_message,
+    ):
+        # Automatic checks are intentionally silent on
+        # network/API failures. Manual checks still report
+        # errors to the user.
+        return
+
+    def automatic_update_check_finished(
+        self,
+        update,
+    ):
+        if self.shutting_down:
+            return
+
+        status = update.get(
+            "status"
+        )
+
+        # Automatic checks stay completely quiet when Zelvik
+        # is current or when a release is not installable.
+        if status != "update_available":
+            return
+
+        latest_version = update.get(
+            "latest_version",
+            "Unknown",
+        )
+
+        self.update_status_label.setText(
+            f"Update available: {latest_version}"
+        )
+
+        answer = QMessageBox.question(
+            self,
+            "Zelvik Update Available",
+            (
+                "A new version of Zelvik is available.\n\n"
+                f"Current version: {APP_VERSION}\n"
+                f"Available version: {latest_version}\n\n"
+                "Download and install it now?"
+            ),
+            QMessageBox.Yes
+            | QMessageBox.No,
+            QMessageBox.Yes,
+        )
+
+        if answer != QMessageBox.Yes:
+            return
+
+        self.update_status_label.setText(
+            f"Downloading Zelvik {latest_version}..."
+        )
+
+        QApplication.processEvents()
+
+        try:
+            installer_path = download_installer(
+                update
+            )
+
+            self.update_status_label.setText(
+                "Download complete. Starting updater..."
+            )
+
+            QApplication.processEvents()
+
+            launch_updater(
+                installer_path
+            )
+
+        except Exception as error:
+            self.update_status_label.setText(
+                "Update failed."
+            )
+
+            QMessageBox.critical(
+                self,
+                "Zelvik Update Failed",
+                (
+                    "Zelvik could not prepare the update.\n\n"
+                    f"{error}"
+                ),
+            )
+
+            return
+
+        self.close()
 
     def check_for_updates(self):
         self.check_updates_button.setEnabled(
