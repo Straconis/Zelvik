@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 
 namespace Zelvik.YouTube;
 
@@ -18,6 +18,18 @@ public sealed class YtDlpResult
         Array.Empty<string>();
 }
 
+public sealed class YtDlpMetadataResult
+{
+    public bool Success { get; init; }
+
+    public int ExitCode { get; init; }
+
+    public string Title { get; init; } =
+        string.Empty;
+
+    public string StandardError { get; init; } =
+        string.Empty;
+}
 public sealed class YtDlpService
 {
     private readonly string _ytDlpPath;
@@ -233,4 +245,161 @@ public sealed class YtDlpService
                 streamUrls
         };
     }
+    public async Task<YtDlpMetadataResult> ResolveTitleAsync(
+        string videoUrl,
+        string? cookieFile = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(videoUrl))
+        {
+            throw new ArgumentException(
+                "A YouTube URL is required.",
+                nameof(videoUrl));
+        }
+
+        var startInfo =
+            new ProcessStartInfo
+            {
+                FileName =
+                    _ytDlpPath,
+
+                UseShellExecute =
+                    false,
+
+                RedirectStandardOutput =
+                    true,
+
+                RedirectStandardError =
+                    true,
+
+                CreateNoWindow =
+                    true
+            };
+
+        startInfo.ArgumentList.Add(
+            "--no-playlist");
+
+        startInfo.ArgumentList.Add(
+            "--no-warnings");
+
+        startInfo.ArgumentList.Add(
+            "--get-title");
+
+        if (!string.IsNullOrWhiteSpace(
+                cookieFile))
+        {
+            startInfo.ArgumentList.Add(
+                "--cookies");
+
+            startInfo.ArgumentList.Add(
+                cookieFile);
+        }
+
+        startInfo.ArgumentList.Add(
+            videoUrl);
+
+        string preferredTemp =
+            @"D:\ZelvikTemp";
+
+        string tempPath =
+            Directory.Exists(preferredTemp)
+                ? preferredTemp
+                : Path.GetTempPath();
+
+        startInfo.Environment["TEMP"] =
+            tempPath;
+
+        startInfo.Environment["TMP"] =
+            tempPath;
+
+        using var process =
+            new Process
+            {
+                StartInfo =
+                    startInfo
+            };
+
+        try
+        {
+            if (!process.Start())
+            {
+                throw new InvalidOperationException(
+                    "yt-dlp could not be started.");
+            }
+        }
+        catch (Exception ex)
+        {
+            return new YtDlpMetadataResult
+            {
+                Success =
+                    false,
+
+                ExitCode =
+                    -1,
+
+                StandardError =
+                    $"Failed to start yt-dlp: {ex.Message}"
+            };
+        }
+
+        Task<string> stdoutTask =
+            process.StandardOutput
+                .ReadToEndAsync(
+                    cancellationToken);
+
+        Task<string> stderrTask =
+            process.StandardError
+                .ReadToEndAsync(
+                    cancellationToken);
+
+        try
+        {
+            await process.WaitForExitAsync(
+                cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            try
+            {
+                if (!process.HasExited)
+                {
+                    process.Kill(
+                        entireProcessTree: true);
+                }
+            }
+            catch
+            {
+            }
+
+            throw;
+        }
+
+        string standardOutput =
+            await stdoutTask;
+
+        string standardError =
+            await stderrTask;
+
+        string title =
+            standardOutput.Trim();
+
+        return new YtDlpMetadataResult
+        {
+            Success =
+                process.ExitCode == 0
+                &&
+                !string.IsNullOrWhiteSpace(
+                    title),
+
+            ExitCode =
+                process.ExitCode,
+
+            Title =
+                title,
+
+            StandardError =
+                standardError
+        };
+    }
 }
+

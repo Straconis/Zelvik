@@ -1,4 +1,4 @@
-import os
+﻿import os
 
 import keyring
 from dotenv import load_dotenv
@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 # Zelvik configuration
 # ---------------------------------------------------------
 
-APP_NAME = "DarkBetweenAudio"
+APP_NAME = "Zelvik"
 
 TOKEN_SERVICE = (
     "Zelvik"

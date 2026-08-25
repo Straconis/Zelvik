@@ -1,4 +1,5 @@
-﻿using System.Windows;
+﻿using Zelvik.Core.Security;
+using System.Windows;
 using System.Windows.Media;
 using Zelvik.Core.Configuration;
 
@@ -14,6 +15,8 @@ public partial class App : Application
 
         await SettingsManager.LoadAsync();
 
+        MigrateDiscordTokenToCredentialManager();
+
         ApplyTheme(SettingsManager.Settings.Ui.DarkMode);
 
         var mainWindow = new MainWindow();
@@ -21,6 +24,57 @@ public partial class App : Application
         mainWindow.Show();
     }
 
+    private static void MigrateDiscordTokenToCredentialManager()
+    {
+        var credentialStore =
+            new DiscordCredentialStore();
+
+        string? storedToken =
+            null;
+
+        try
+        {
+            storedToken =
+                credentialStore.ReadToken();
+        }
+        catch
+        {
+            // Do not block startup if Credential Manager
+            // is temporarily unavailable.
+        }
+
+        string plaintextToken =
+            SettingsManager.Settings.Discord.BotToken?.Trim()
+            ?? string.Empty;
+
+        if (string.IsNullOrWhiteSpace(storedToken)
+            && !string.IsNullOrWhiteSpace(plaintextToken))
+        {
+            try
+            {
+                credentialStore.SaveToken(
+                    plaintextToken);
+
+                storedToken =
+                    plaintextToken;
+            }
+            catch
+            {
+                // Leave the plaintext value intact if migration fails.
+                return;
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(storedToken)
+            && !string.IsNullOrWhiteSpace(
+                SettingsManager.Settings.Discord.BotToken))
+        {
+            SettingsManager.Settings.Discord.BotToken =
+                string.Empty;
+
+            SettingsManager.Save();
+        }
+    }
     public static void ApplyTheme(bool darkMode)
     {
         if (darkMode)
@@ -71,3 +125,5 @@ public partial class App : Application
         }
     }
 }
+
+

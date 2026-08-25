@@ -20,6 +20,7 @@
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
         <!-- Add URL -->
@@ -107,6 +108,8 @@
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="8"/>
                 <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="12"/>
+                <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="8"/>
@@ -125,18 +128,52 @@
                     MinWidth="90"
                     Height="36"/>
 
+            <CheckBox x:Name="LoopQueueCheckBox"
+                      Grid.Column="4"
+                      Content="Loop Queue"
+                      VerticalAlignment="Center"
+                      Margin="0,0,12,0"/>
+
             <Button x:Name="RemoveSelectedButton"
-                    Grid.Column="4"
+                    Grid.Column="6"
                     Content="Remove Selected"
                     MinWidth="120"
                     Height="36"/>
 
             <Button x:Name="ClearQueueButton"
-                    Grid.Column="6"
+                    Grid.Column="8"
                     Content="Clear Queue"
                     MinWidth="100"
                     Height="36"/>
         </Grid>
 
+        <!-- Import / Export -->
+
+        <Grid Grid.Row="6"
+              Margin="0,10,0,0">
+
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="8"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <Button x:Name="ImportQueueButton"
+                    Grid.Column="0"
+                    Content="Import Queue"
+                    MinWidth="110"
+                    Height="34"/>
+
+            <Button x:Name="ExportQueueButton"
+                    Grid.Column="2"
+                    Content="Export Queue"
+                    MinWidth="110"
+                    Height="34"/>
+        </Grid>
+
     </Grid>
 </Window>
+
+
+

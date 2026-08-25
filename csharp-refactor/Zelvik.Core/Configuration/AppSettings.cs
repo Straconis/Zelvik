@@ -1,4 +1,5 @@
-﻿namespace Zelvik.Core.Configuration;
+﻿using System.Text.Json.Serialization;
+namespace Zelvik.Core.Configuration;
 
 public sealed class AppSettings
 {
@@ -13,6 +14,7 @@ public sealed class AppSettings
 
 public sealed class DiscordSettings
 {
+    [JsonIgnore]
     public string BotToken { get; set; } =
         string.Empty;
 
@@ -99,3 +101,4 @@ public sealed class UiSettings
     public bool DarkMode { get; set; } =
         true;
 }
+

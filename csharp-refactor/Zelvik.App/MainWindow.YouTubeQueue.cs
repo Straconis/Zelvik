@@ -299,7 +299,18 @@ public partial class MainWindow
         {
         }
 
-        _youTubeQueueService.CompleteCurrent();
+        bool loopQueue =
+            _youTubeQueueWindow?.LoopQueueEnabled
+            == true;
+
+        if (loopQueue)
+        {
+            _youTubeQueueService.RequeueCurrentAtBack();
+        }
+        else
+        {
+            _youTubeQueueService.CompleteCurrent();
+        }
 
         YouTubeQueueItem? next =
             _youTubeQueueService.TakeNext();
@@ -483,7 +494,18 @@ public partial class MainWindow
             return;
         }
 
-        _youTubeQueueService.CompleteCurrent();
+        bool loopQueue =
+            _youTubeQueueWindow?.LoopQueueEnabled
+            == true;
+
+        if (loopQueue)
+        {
+            _youTubeQueueService.RequeueCurrentAtBack();
+        }
+        else
+        {
+            _youTubeQueueService.CompleteCurrent();
+        }
 
         YouTubeQueueItem? next =
             _youTubeQueueService.TakeNext();
@@ -538,3 +560,4 @@ public partial class MainWindow
             false;
     }
 }
+

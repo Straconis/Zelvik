@@ -1,4 +1,7 @@
 ﻿using System.Diagnostics;
+using System.IO;
+using System.Text.Json;
+using Microsoft.Win32;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -9,9 +12,15 @@ namespace Zelvik.App;
 public partial class YouTubeQueueWindow : Window
 {
     private readonly YouTubeQueueService _queueService;
+
+    private readonly YtDlpService _ytDlpService =
+        new();
     private readonly Func<float> _volumeProvider;
 
     private Point _dragStartPoint;
+
+    public bool LoopQueueEnabled =>
+        LoopQueueCheckBox.IsChecked == true;
 
     public event EventHandler? PlayResumeRequested;
     public event EventHandler? PlayNextRequested;
@@ -45,6 +54,12 @@ public partial class YouTubeQueueWindow : Window
 
         ClearQueueButton.Click +=
             ClearQueueButton_Click;
+
+        ImportQueueButton.Click +=
+            ImportQueueButton_Click;
+
+        ExportQueueButton.Click +=
+            ExportQueueButton_Click;
 
         QueueUrlTextBox.KeyDown +=
             QueueUrlTextBox_KeyDown;
@@ -107,15 +122,48 @@ public partial class YouTubeQueueWindow : Window
                 0.0f,
                 2.0f);
 
-        _queueService.Enqueue(
-            url,
-            volume: volume);
+        YouTubeQueueItem item =
+            _queueService.Enqueue(
+                url,
+                volume: volume);
+
+        _ =
+            ResolveQueueItemTitleAsync(
+                item);
 
         QueueUrlTextBox.Clear();
 
         QueueUrlTextBox.Focus();
     }
 
+    private async Task ResolveQueueItemTitleAsync(
+        YouTubeQueueItem item)
+    {
+        try
+        {
+            YtDlpMetadataResult result =
+                await _ytDlpService.ResolveTitleAsync(
+                    item.Url);
+
+            if (!result.Success)
+                return;
+
+            if (string.IsNullOrWhiteSpace(
+                    result.Title))
+            {
+                return;
+            }
+
+            _queueService.SetTitle(
+                item.Id,
+                result.Title);
+        }
+        catch
+        {
+            // Best-effort metadata lookup.
+            // Playback can still use the URL.
+        }
+    }
     private static bool LooksLikeYouTubeUrl(
         string value)
     {
@@ -194,6 +242,234 @@ public partial class YouTubeQueueWindow : Window
         _queueService.Clear();
     }
 
+    private void ExportQueueButton_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        IReadOnlyList<YouTubeQueueItem> snapshot =
+            _queueService.GetSnapshot();
+
+        if (snapshot.Count == 0)
+        {
+            MessageBox.Show(
+                this,
+                "There are no upcoming queue items to export.",
+                "Export YouTube Queue",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+
+            return;
+        }
+
+        var exportItems =
+            snapshot
+                .Select(
+                    item =>
+                        new QueueExportItem
+                        {
+                            Url =
+                                item.Url,
+
+                            Title =
+                                item.Title,
+
+                            Volume =
+                                item.Volume,
+
+                            Loop =
+                                item.Loop,
+
+                            StartTime =
+                                item.StartTime,
+
+                            StopTime =
+                                item.StopTime
+                        })
+                .ToList();
+
+        var dialog =
+            new SaveFileDialog
+            {
+                Title =
+                    "Export YouTube Queue",
+
+                Filter =
+                    "Zelvik Queue (*.zelvikqueue.json)|*.zelvikqueue.json|" +
+                    "JSON Files (*.json)|*.json",
+
+                FileName =
+                    "zelvik-youtube-queue.zelvikqueue.json",
+
+                AddExtension =
+                    true
+            };
+
+        if (dialog.ShowDialog(this) != true)
+            return;
+
+        try
+        {
+            string json =
+                JsonSerializer.Serialize(
+                    exportItems,
+                    new JsonSerializerOptions
+                    {
+                        WriteIndented =
+                            true
+                    });
+
+            File.WriteAllText(
+                dialog.FileName,
+                json);
+
+            MessageBox.Show(
+                this,
+                $"Exported {exportItems.Count} queue item(s).",
+                "YouTube Queue Exported",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(
+                this,
+                ex.Message,
+                "Queue Export Error",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
+    }
+
+    private void ImportQueueButton_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        var dialog =
+            new OpenFileDialog
+            {
+                Title =
+                    "Import YouTube Queue",
+
+                Filter =
+                    "Zelvik Queue (*.zelvikqueue.json)|*.zelvikqueue.json|" +
+                    "JSON Files (*.json)|*.json",
+
+                CheckFileExists =
+                    true,
+
+                Multiselect =
+                    false
+            };
+
+        if (dialog.ShowDialog(this) != true)
+            return;
+
+        try
+        {
+            string json =
+                File.ReadAllText(
+                    dialog.FileName);
+
+            List<QueueExportItem>? items =
+                JsonSerializer.Deserialize<
+                    List<QueueExportItem>>(
+                    json);
+
+            if (items is null
+                || items.Count == 0)
+            {
+                MessageBox.Show(
+                    this,
+                    "The selected queue file contains no items.",
+                    "Import YouTube Queue",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+
+                return;
+            }
+
+            MessageBoxResult mode =
+                MessageBox.Show(
+                    this,
+                    "Replace the existing upcoming queue?\n\n" +
+                    "Yes = Replace\n" +
+                    "No = Append\n" +
+                    "Cancel = Do nothing",
+                    "Import YouTube Queue",
+                    MessageBoxButton.YesNoCancel,
+                    MessageBoxImage.Question,
+                    MessageBoxResult.Cancel);
+
+            if (mode == MessageBoxResult.Cancel)
+                return;
+
+            if (mode == MessageBoxResult.Yes)
+            {
+                _queueService.Clear();
+            }
+
+            int imported =
+                0;
+
+            foreach (QueueExportItem item in items)
+            {
+                if (string.IsNullOrWhiteSpace(
+                        item.Url))
+                {
+                    continue;
+                }
+
+                if (!LooksLikeYouTubeUrl(
+                        item.Url))
+                {
+                    continue;
+                }
+
+                YouTubeQueueItem importedItem =
+                    _queueService.Enqueue(
+                        item.Url,
+                        volume:
+                            Math.Clamp(
+                                item.Volume,
+                                0.0f,
+                                2.0f),
+                        loop:
+                            item.Loop,
+                        startTime:
+                            item.StartTime,
+                        stopTime:
+                            item.StopTime,
+                        title:
+                            item.Title);
+
+                if (string.IsNullOrWhiteSpace(
+                        importedItem.Title))
+                {
+                    _ =
+                        ResolveQueueItemTitleAsync(
+                            importedItem);
+                }
+
+                imported++;
+            }
+
+            MessageBox.Show(
+                this,
+                $"Imported {imported} queue item(s).",
+                "YouTube Queue Imported",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(
+                this,
+                ex.Message,
+                "Queue Import Error",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
+    }
     private void QueueService_QueueChanged(
         object? sender,
         EventArgs e)
@@ -425,6 +701,22 @@ public partial class YouTubeQueueWindow : Window
             QueueService_CurrentItemChanged;
     }
 
+    private sealed class QueueExportItem
+    {
+        public string Url { get; set; } =
+            string.Empty;
+
+        public string? Title { get; set; }
+
+        public float Volume { get; set; } =
+            1.0f;
+
+        public bool Loop { get; set; }
+
+        public TimeSpan? StartTime { get; set; }
+
+        public TimeSpan? StopTime { get; set; }
+    }
     private sealed class QueueDisplayItem
     {
         public Guid Id { get; }
@@ -454,3 +746,12 @@ public partial class YouTubeQueueWindow : Window
         }
     }
 }
+
+
+
+
+
+
+
+
+

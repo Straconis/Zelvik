@@ -43,19 +43,36 @@
 
                 <Grid Margin="12">
 
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="160"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
 
-                    <TextBlock Grid.Column="0"
+                    <TextBlock Grid.Row="0"
+                               Grid.Column="0"
                                Text="Bot Token"
                                VerticalAlignment="Center"
                                Margin="0,0,12,0"/>
 
                     <PasswordBox x:Name="DiscordTokenPasswordBox"
+                                 Grid.Row="0"
                                  Grid.Column="1"
                                  MinWidth="300"/>
+
+                    <Button x:Name="DiscordSetupWizardButton"
+                            Grid.Row="1"
+                            Grid.Column="1"
+                            Content="Discord Setup Wizard"
+                            HorizontalAlignment="Left"
+                            MinWidth="160"
+                            Padding="14,6"
+                            Margin="0,10,0,0"
+                            Click="DiscordSetupWizardButton_Click"/>
 
                 </Grid>
 
@@ -258,4 +275,5 @@
     </ScrollViewer>
 
 </Window>
+
 

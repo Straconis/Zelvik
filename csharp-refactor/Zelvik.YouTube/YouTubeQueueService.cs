@@ -79,6 +79,48 @@ public sealed class YouTubeQueueService
         return item;
     }
 
+    public bool SetTitle(
+        Guid id,
+        string title)
+    {
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            return false;
+        }
+
+        bool changed = false;
+
+        lock (_syncRoot)
+        {
+            YouTubeQueueItem? item =
+                _queue.FirstOrDefault(
+                    item => item.Id == id);
+
+            if (item is null)
+            {
+                return false;
+            }
+
+            string cleanTitle =
+                title.Trim();
+
+            if (item.Title != cleanTitle)
+            {
+                item.Title =
+                    cleanTitle;
+
+                changed =
+                    true;
+            }
+        }
+
+        if (changed)
+        {
+            OnQueueChanged();
+        }
+
+        return true;
+    }
     public bool Remove(Guid id)
     {
         bool removed;
@@ -297,6 +339,25 @@ public sealed class YouTubeQueueService
         OnCurrentItemChanged();
     }
 
+    public void RequeueCurrentAtBack()
+    {
+        lock (_syncRoot)
+        {
+            if (CurrentItem is null)
+            {
+                return;
+            }
+
+            _queue.Add(
+                CurrentItem);
+
+            CurrentItem =
+                null;
+        }
+
+        OnQueueChanged();
+        OnCurrentItemChanged();
+    }
     private void OnQueueChanged()
     {
         QueueChanged?.Invoke(
@@ -311,3 +372,5 @@ public sealed class YouTubeQueueService
             CurrentItem);
     }
 }
+
+

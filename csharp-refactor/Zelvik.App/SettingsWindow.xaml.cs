@@ -1,10 +1,14 @@
 ﻿using System.Windows;
 using Zelvik.Audio;
+using Zelvik.Core.Security;
 
 namespace Zelvik.App;
 
 public partial class SettingsWindow : Window
 {
+    private readonly DiscordCredentialStore _discordCredentialStore =
+        new();
+
     private readonly AudioDeviceService _audioDeviceService =
         new();
 
@@ -25,8 +29,17 @@ public partial class SettingsWindow : Window
         var settings =
             App.SettingsManager.Settings;
 
-        DiscordTokenPasswordBox.Password =
-            settings.Discord.BotToken;
+        try
+        {
+            DiscordTokenPasswordBox.Password =
+                _discordCredentialStore.ReadToken()
+                ?? string.Empty;
+        }
+        catch
+        {
+            DiscordTokenPasswordBox.Password =
+                string.Empty;
+        }
 
         YouTubeApiKeyPasswordBox.Password =
             settings.YouTube.ApiKey;
@@ -161,6 +174,28 @@ public partial class SettingsWindow : Window
         }
     }
 
+    private void DiscordSetupWizardButton_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        var wizard =
+            new DiscordSetupWizard
+            {
+                Owner =
+                    this
+            };
+
+        bool? result =
+            wizard.ShowDialog();
+
+        if (result == true
+            && !string.IsNullOrWhiteSpace(
+                wizard.VerifiedToken))
+        {
+            DiscordTokenPasswordBox.Password =
+                wizard.VerifiedToken;
+        }
+    }
     private void YouTubeSignInButton_Click(
         object sender,
         RoutedEventArgs e)
@@ -198,8 +233,18 @@ public partial class SettingsWindow : Window
         var settings =
             App.SettingsManager.Settings;
 
+        string discordToken =
+            DiscordTokenPasswordBox.Password.Trim();
+
+        if (!string.IsNullOrWhiteSpace(
+                discordToken))
+        {
+            _discordCredentialStore.SaveToken(
+                discordToken);
+        }
+
         settings.Discord.BotToken =
-            DiscordTokenPasswordBox.Password;
+            string.Empty;
 
         settings.YouTube.ApiKey =
             YouTubeApiKeyPasswordBox.Password;
@@ -252,3 +297,8 @@ public partial class SettingsWindow : Window
         Close();
     }
 }
+
+
+
+
+
