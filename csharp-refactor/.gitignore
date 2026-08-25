@@ -1,4 +1,4 @@
-﻿# .NET build output
+# .NET build output
 **/bin/
 **/obj/
 
@@ -30,3 +30,6 @@ Cache/
 youtube-cookies-*.txt
 .env
 .env.*
+
+# Native C++ build output
+Zelvik.Native/build/
