@@ -91,7 +91,7 @@
 
             <TextBlock x:Name="Input1VolumeLabel"
                        Text="Input 1 Volume: 100%"
-                       Foreground="#3B9CFF"
+                       Foreground="#FF9800"
                        Margin="0,0,0,5"/>
 
             <Slider x:Name="Input1VolumeSlider"
@@ -121,12 +121,12 @@
 
             <TextBlock x:Name="Input1StatusText"
                        Text="Input 1: Stopped"
-                       Foreground="#3B9CFF"
+                       Foreground="#FF9800"
                        Margin="0,0,0,18"/>
 
             <TextBlock x:Name="Input2VolumeLabel"
                        Text="Input 2 Volume: 100%"
-                       Foreground="#FF9800"
+                       Foreground="#3B9CFF"
                        Margin="0,0,0,5"/>
 
             <Slider x:Name="Input2VolumeSlider"
@@ -156,10 +156,10 @@
 
             <TextBlock x:Name="Input2StatusText"
                        Text="Input 2: Stopped"
-                       Foreground="#FF9800"
+                       Foreground="#3B9CFF"
                        Margin="0,0,0,24"/>
 
-            <TextBlock Text="YouTube" Margin="0,0,0,7"/>
+            <TextBlock Text="YouTube" Foreground="#FF4D4D" Margin="0,0,0,7"/>
 
             <TextBox x:Name="YouTubeUrlTextBox"
                      Height="34"
@@ -212,7 +212,7 @@
 
             <Slider x:Name="MediaVolumeSlider"
                     Minimum="0"
-                    Maximum="100"
+                    Maximum="200"
                     Value="100"
                     Margin="0,0,0,8"
                     ValueChanged="VolumeSlider_ValueChanged"/>
@@ -258,7 +258,7 @@
                      Margin="0,0,0,22"
                      Text="YouTube playback activity will appear here."/>
 
-            <TextBlock Text="Local File Playback" Margin="0,0,0,8"/>
+            <TextBlock Text="Local File Playback" Foreground="#32CD70" Margin="0,0,0,8"/>
 
             <TextBlock x:Name="LocalFileNameText"
                        Text="No sound selected"
@@ -270,7 +270,7 @@
 
             <Slider x:Name="LocalMediaVolumeSlider"
                     Minimum="0"
-                    Maximum="100"
+                    Maximum="200"
                     Value="85"
                     Margin="0,0,0,8"
                     ValueChanged="VolumeSlider_ValueChanged"/>
@@ -304,7 +304,7 @@
                        Text="Local Audio: Stopped"
                        Margin="0,0,0,22"/>
 
-            <TextBlock Text="Zelvik Input" Margin="0,0,0,7"/>
+            <TextBlock Text="Zelvik Input" Foreground="#B26CFF" Margin="0,0,0,7"/>
 
             <TextBlock Text="Virtual Windows Audio Endpoint"
                        FontWeight="SemiBold"
@@ -372,3 +372,5 @@
         </StackPanel>
     </ScrollViewer>
 </Window>
+
+

@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Zelvik Settings"
         Width="700"
-        Height="760"
+        Height="800"
         MinWidth="620"
         MinHeight="600"
         WindowStartupLocation="CenterOwner"
@@ -25,89 +25,114 @@
 
             <StackPanel Grid.Row="0"
                         Margin="0,0,0,24">
+
                 <TextBlock Text="Zelvik Settings"
                            FontSize="26"
                            FontWeight="SemiBold"/>
+
                 <TextBlock Text="Configure Discord, YouTube, audio inputs, and application routing."
                            Margin="0,6,0,0"
                            Opacity="0.75"
                            TextWrapping="Wrap"/>
+
             </StackPanel>
 
             <GroupBox Grid.Row="1"
                       Header="Discord"
                       Margin="0,0,0,16">
+
                 <Grid Margin="12">
+
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="160"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
+
                     <TextBlock Grid.Column="0"
                                Text="Bot Token"
                                VerticalAlignment="Center"
                                Margin="0,0,12,0"/>
+
                     <PasswordBox x:Name="DiscordTokenPasswordBox"
                                  Grid.Column="1"
                                  MinWidth="300"/>
+
                 </Grid>
+
             </GroupBox>
 
             <GroupBox Grid.Row="2"
-                      Header="YouTube"
+                      Header="YouTube" Foreground="#FF4D4D"
                       Margin="0,0,0,16">
+
                 <StackPanel Margin="12">
+
                     <Grid>
+
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="160"/>
                             <ColumnDefinition Width="*"/>
                         </Grid.ColumnDefinitions>
+
                         <TextBlock Grid.Column="0"
                                    Text="API Key"
                                    VerticalAlignment="Center"
                                    Margin="0,0,12,0"/>
+
                         <PasswordBox x:Name="YouTubeApiKeyPasswordBox"
                                      Grid.Column="1"
                                      MinWidth="300"/>
+
                     </Grid>
 
                     <Grid Margin="0,14,0,0">
+
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="160"/>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
+
                         <TextBlock Grid.Column="0"
                                    Text="YouTube Account"
                                    VerticalAlignment="Center"
                                    Margin="0,0,12,0"/>
+
                         <TextBlock x:Name="YouTubeAccountStatusText"
                                    Grid.Column="1"
                                    Text="Signed out"
                                    VerticalAlignment="Center"/>
+
                         <Button x:Name="YouTubeSignInButton"
                                 Grid.Column="2"
                                 Content="Sign in to YouTube"
                                 Padding="14,6"
                                 Margin="12,0,0,0"
                                 Click="YouTubeSignInButton_Click"/>
+
                     </Grid>
+
                 </StackPanel>
+
             </GroupBox>
 
             <GroupBox Grid.Row="3"
                       Header="Audio"
                       Margin="0,0,0,20">
+
                 <StackPanel Margin="12">
 
-                    <TextBlock Text="Auxiliary Input 1"
+                    <TextBlock Text="Auxiliary Input 1" Foreground="#FF9800"
                                FontWeight="SemiBold"/>
+
                     <ComboBox x:Name="Input1DeviceComboBox"
                               Margin="0,6,0,16"
                               DisplayMemberPath="Name"
                               MinWidth="300"/>
 
-                    <TextBlock Text="Auxiliary Input 2"
+                    <TextBlock Text="Auxiliary Input 2" Foreground="#3B9CFF"
                                FontWeight="SemiBold"/>
+
                     <ComboBox x:Name="Input2DeviceComboBox"
                               Margin="0,6,0,20"
                               DisplayMemberPath="Name"
@@ -115,46 +140,89 @@
 
                     <Separator Margin="0,0,0,18"/>
 
-                    <TextBlock Text="Application Routing 1"
-                               FontWeight="SemiBold"/>
-                    <Grid Margin="0,6,0,16">
+                    <Grid>
+
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
+
+                        <TextBlock Grid.Column="0"
+                                   Text="Application Routing 1" Foreground="#FF9800"
+                                   FontWeight="SemiBold"
+                                   VerticalAlignment="Center"/>
+
+                        <CheckBox x:Name="Routing1EnabledCheckBox"
+                                  Grid.Column="1"
+                                  Content="Enabled"
+                                  VerticalAlignment="Center"/>
+
+                    </Grid>
+
+                    <Grid Margin="0,6,0,16">
+
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
                         <ComboBox x:Name="RoutingApplication1ComboBox"
                                   Grid.Column="0"
                                   DisplayMemberPath="DisplayName"
                                   MinWidth="300"/>
+
                         <Button Grid.Column="1"
                                 Content="Refresh"
                                 Padding="14,6"
                                 Margin="8,0,0,0"
                                 Click="RefreshRoutingApplications1Button_Click"/>
+
                     </Grid>
 
-                    <TextBlock Text="Application Routing 2"
-                               FontWeight="SemiBold"/>
-                    <Grid Margin="0,6,0,16">
+                    <Grid>
+
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
+
+                        <TextBlock Grid.Column="0"
+                                   Text="Application Routing 2" Foreground="#3B9CFF"
+                                   FontWeight="SemiBold"
+                                   VerticalAlignment="Center"/>
+
+                        <CheckBox x:Name="Routing2EnabledCheckBox"
+                                  Grid.Column="1"
+                                  Content="Enabled"
+                                  VerticalAlignment="Center"/>
+
+                    </Grid>
+
+                    <Grid Margin="0,6,0,16">
+
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
                         <ComboBox x:Name="RoutingApplication2ComboBox"
                                   Grid.Column="0"
                                   DisplayMemberPath="DisplayName"
                                   MinWidth="300"/>
+
                         <Button Grid.Column="1"
                                 Content="Refresh"
                                 Padding="14,6"
                                 Margin="8,0,0,0"
                                 Click="RefreshRoutingApplications2Button_Click"/>
+
                     </Grid>
 
                     <Separator Margin="0,0,0,18"/>
 
                     <TextBlock Text="Monitor Output Device"
                                FontWeight="SemiBold"/>
+
                     <ComboBox x:Name="RoutingOutputDeviceComboBox"
                               Margin="0,6,0,12"
                               DisplayMemberPath="Name"
@@ -165,22 +233,29 @@
                               Margin="0,4,0,0"/>
 
                 </StackPanel>
+
             </GroupBox>
 
             <StackPanel Grid.Row="4"
                         Orientation="Horizontal"
                         HorizontalAlignment="Right">
+
                 <Button Content="Cancel"
                         MinWidth="90"
                         Padding="14,7"
                         Margin="0,0,8,0"
                         Click="CancelSettingsButton_Click"/>
+
                 <Button Content="Save"
                         MinWidth="90"
                         Padding="14,7"
                         Click="SaveSettingsButton_Click"/>
+
             </StackPanel>
 
         </Grid>
+
     </ScrollViewer>
+
 </Window>
+

@@ -1,23 +1,26 @@
-using NAudio.Wave;
+﻿using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
 
 namespace Zelvik.Audio;
 
 public sealed class AudioMixerService : IDisposable
 {
-    private const float ActivityThreshold = 0.001f;
+    private const float ActivityThreshold =
+        0.001f;
+
+    private readonly object _inputLock =
+        new();
 
     private readonly MixingSampleProvider _mixer;
 
-    private readonly Dictionary<string, VolumeSampleProvider> _inputs =
+    private readonly Dictionary<string, MixerInputState> _inputs =
         new(StringComparer.OrdinalIgnoreCase);
-
-    private bool _outputActive;
 
     public WaveFormat WaveFormat =>
         _mixer.WaveFormat;
 
-    public float MasterVolume { get; set; } = 1.0f;
+    public float MasterVolume { get; set; } =
+        1.0f;
 
     public float LastOutputPeak { get; private set; }
 
@@ -43,65 +46,119 @@ public sealed class AudioMixerService : IDisposable
         ISampleProvider source,
         float volume = 1.0f)
     {
-        RemoveInput(inputId);
+        RemoveInput(
+            inputId);
 
         ISampleProvider normalized =
-            NormalizeFormat(source);
+            NormalizeFormat(
+                source);
 
         var volumeProvider =
             new VolumeSampleProvider(
                 normalized)
             {
                 Volume =
-                    ClampVolume(volume)
+                    ClampInputVolume(
+                        volume)
             };
 
-        _inputs[inputId] =
-            volumeProvider;
+        /*
+         * Meter AFTER the source volume control.
+         *
+         * That means the live meter represents the signal
+         * Zelvik is actually feeding into the mixer, not
+         * merely the raw source before the user's gain.
+         */
+        var meterProvider =
+            new PeakMeterSampleProvider(
+                volumeProvider);
+
+        var state =
+            new MixerInputState(
+                volumeProvider,
+                meterProvider);
+
+        lock (_inputLock)
+        {
+            _inputs[inputId] =
+                state;
+        }
 
         _mixer.AddMixerInput(
-            volumeProvider);
+            meterProvider);
     }
 
     public void RemoveInput(
         string inputId)
     {
-        if (!_inputs.TryGetValue(
-                inputId,
-                out var provider))
+        MixerInputState? state;
+
+        lock (_inputLock)
         {
-            return;
+            if (!_inputs.TryGetValue(
+                    inputId,
+                    out state))
+            {
+                return;
+            }
+
+            _inputs.Remove(
+                inputId);
         }
 
         _mixer.RemoveMixerInput(
-            provider);
-
-        _inputs.Remove(
-            inputId);
+            state.MeterProvider);
     }
 
     public void SetInputVolume(
         string inputId,
         float volume)
     {
-        if (_inputs.TryGetValue(
-                inputId,
-                out var provider))
+        lock (_inputLock)
         {
-            provider.Volume =
-                ClampVolume(volume);
+            if (_inputs.TryGetValue(
+                    inputId,
+                    out var state))
+            {
+                state.VolumeProvider.Volume =
+                    ClampInputVolume(
+                        volume);
+            }
         }
+    }
+
+    public float GetInputPeak(
+        string inputId)
+    {
+        lock (_inputLock)
+        {
+            if (_inputs.TryGetValue(
+                    inputId,
+                    out var state))
+            {
+                return state.MeterProvider.LastPeak;
+            }
+        }
+
+        return 0.0f;
     }
 
     public int Read(
         Span<float> buffer)
     {
         int samplesRead =
-            _mixer.Read(buffer);
+            _mixer.Read(
+                buffer);
 
+        /*
+         * Master may eventually support boost independently
+         * of the normal 0-100% controls, so permit up to 200%.
+         */
         float master =
-            ClampVolume(
-                MasterVolume);
+            Math.Clamp(
+                MasterVolume,
+                0.0f,
+                2.0f);
 
         float peak =
             0.0f;
@@ -117,7 +174,8 @@ public sealed class AudioMixerService : IDisposable
                 sample;
 
             float absolute =
-                Math.Abs(sample);
+                Math.Abs(
+                    sample);
 
             if (absolute > peak)
             {
@@ -129,29 +187,11 @@ public sealed class AudioMixerService : IDisposable
         LastOutputPeak =
             peak;
 
-        bool active =
-            peak >= ActivityThreshold;
-
-        if (active)
+        if (peak >= ActivityThreshold)
         {
-            /*
-             * Fire repeatedly while real audio is present.
-             *
-             * This is intentional for diagnostics so the UI
-             * can display the current peak level instead of
-             * merely reporting that the mixer was read once.
-             */
             OutputAudioReceived?.Invoke(
                 this,
                 EventArgs.Empty);
-
-            _outputActive =
-                true;
-        }
-        else
-        {
-            _outputActive =
-                false;
         }
 
         return samplesRead;
@@ -196,28 +236,113 @@ public sealed class AudioMixerService : IDisposable
         return result;
     }
 
-    private static float ClampVolume(
+    private static float ClampInputVolume(
         float volume)
     {
+        /*
+         * 200% is intentional.
+         *
+         * YouTube can be unusually quiet, so Zelvik supports
+         * source gain above unity where the UI permits it.
+         */
         return Math.Clamp(
             volume,
             0.0f,
-            1.0f);
+            2.0f);
     }
 
     public void Dispose()
     {
-        foreach (
-            string inputId
-            in _inputs.Keys.ToList())
+        string[] inputIds;
+
+        lock (_inputLock)
+        {
+            inputIds =
+                _inputs.Keys.ToArray();
+        }
+
+        foreach (string inputId in inputIds)
         {
             RemoveInput(
                 inputId);
         }
     }
 
-    private sealed class MasterVolumeSampleProvider
-        : ISampleProvider
+    private sealed class MixerInputState
+    {
+        public VolumeSampleProvider VolumeProvider
+        {
+            get;
+        }
+
+        public PeakMeterSampleProvider MeterProvider
+        {
+            get;
+        }
+
+        public MixerInputState(
+            VolumeSampleProvider volumeProvider,
+            PeakMeterSampleProvider meterProvider)
+        {
+            VolumeProvider =
+                volumeProvider;
+
+            MeterProvider =
+                meterProvider;
+        }
+    }
+
+    private sealed class PeakMeterSampleProvider :
+        ISampleProvider
+    {
+        private readonly ISampleProvider _source;
+
+        public WaveFormat WaveFormat =>
+            _source.WaveFormat;
+
+        public float LastPeak { get; private set; }
+
+        public PeakMeterSampleProvider(
+            ISampleProvider source)
+        {
+            _source =
+                source;
+        }
+
+        public int Read(
+            Span<float> buffer)
+        {
+            int samplesRead =
+                _source.Read(
+                    buffer);
+
+            float peak =
+                0.0f;
+
+            for (int i = 0;
+                 i < samplesRead;
+                 i++)
+            {
+                float absolute =
+                    Math.Abs(
+                        buffer[i]);
+
+                if (absolute > peak)
+                {
+                    peak =
+                        absolute;
+                }
+            }
+
+            LastPeak =
+                peak;
+
+            return samplesRead;
+        }
+    }
+
+    private sealed class MasterVolumeSampleProvider :
+        ISampleProvider
     {
         private readonly AudioMixerService _owner;
 

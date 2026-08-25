@@ -3,6 +3,7 @@ using System.IO;
 using System.Windows;
 using Microsoft.Win32;
 using Zelvik.Audio;
+using NAudio.Wave;
 
 namespace Zelvik.App;
 
@@ -12,7 +13,7 @@ public partial class MainWindow : Window
         "routed-input-1";
 
     private const string Input2MixerId =
-        "external-input-2";
+        "routed-input-2";
 
     private const string YouTubeMixerId =
         "youtube";
@@ -36,7 +37,7 @@ public partial class MainWindow : Window
     private readonly ProcessLoopbackCapture _input1Capture =
         new();
 
-    private readonly ExternalInputCapture _input2Capture =
+    private readonly ProcessLoopbackCapture _input2Capture =
         new();
 
     private readonly AudioMixerService _audioMixer =
@@ -44,6 +45,8 @@ public partial class MainWindow : Window
 
     private readonly LocalMonitorOutput _localMonitor =
         new();
+
+    private readonly AudioMixerPump _audioPump;
 
     private readonly YouTubePlaybackService _youTubePlaybackService =
         new();
@@ -54,6 +57,12 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+
+        _audioPump =
+            new AudioMixerPump(
+                _audioMixer.GetMixedOutput());
+
+        _audioPump.Start();
 
         LoadSettingsIntoUi();
         WireControls();
@@ -155,6 +164,20 @@ public partial class MainWindow : Window
     {
         var settings =
             App.SettingsManager.Settings.Audio;
+
+        if (!settings.Routing1Enabled)
+        {
+            Input1StatusText.Text =
+                "Input 1: Routing disabled";
+
+            MessageBox.Show(
+                "Application Routing 1 is disabled in Settings.",
+                "Input 1",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+
+            return;
+        }
 
         string processName =
             settings.RoutingApplication1;
@@ -302,24 +325,40 @@ public partial class MainWindow : Window
     // INPUT 2
     // ------------------------------------------------------------
 
-    private void StartInput2Button_Click(
+    private async void StartInput2Button_Click(
         object sender,
         RoutedEventArgs e)
     {
         var settings =
             App.SettingsManager.Settings.Audio;
 
-        Input2StatusText.Text =
-            "Input 2: Start requested";
-
-        if (string.IsNullOrWhiteSpace(
-                settings.Aux2Source))
+        if (!settings.Routing2Enabled)
         {
             Input2StatusText.Text =
-                "Input 2: No device configured";
+                "Input 2: Routing disabled";
 
             MessageBox.Show(
-                "Input 2 does not have a configured capture device.",
+                "Application Routing 2 is disabled in Settings.",
+                "Input 2",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+
+            return;
+        }
+
+        string processName =
+            settings.RoutingApplication2;
+
+        Input2StatusText.Text =
+            "Input 2: Looking for audio session...";
+
+        if (string.IsNullOrWhiteSpace(processName))
+        {
+            Input2StatusText.Text =
+                "Input 2: No application configured";
+
+            MessageBox.Show(
+                "Select an application for Input 2 in Settings first.",
                 "Input 2",
                 MessageBoxButton.OK,
                 MessageBoxImage.Warning);
@@ -327,31 +366,61 @@ public partial class MainWindow : Window
             return;
         }
 
+        StartInput2Button.IsEnabled =
+            false;
+
         try
         {
+            var session =
+                _audioSessionService.FindActiveSession(
+                    processName);
+
+            if (session is null)
+            {
+                throw new InvalidOperationException(
+                    $"No active Windows audio session was found for '{processName}'. " +
+                    "Make sure the application is running and has played audio, then refresh it in Settings.");
+            }
+
+            Input2StatusText.Text =
+                $"Input 2: Session found - {session.ProcessName} (PID {session.ProcessId})";
+
             _audioMixer.RemoveInput(
                 Input2MixerId);
 
-            _input2Capture.Start(
-                settings.Aux2Source);
+            await _input2Capture.StopAsync();
+
+            await _input2Capture.StartAsync(
+                session.ProcessId);
+
+            var sampleProvider =
+                _input2Capture.SampleProvider
+                ?? throw new InvalidOperationException(
+                    "Input 2 process capture started but did not expose an audio stream.");
 
             _audioMixer.AddOrReplaceInput(
                 Input2MixerId,
-                _input2Capture.GetSampleProvider(),
+                sampleProvider,
                 (float)(
                     Input2VolumeSlider.Value / 100.0));
 
             EnsureMonitorRunning();
 
             Input2StatusText.Text =
-                $"Input 2: Running - {_input2Capture.DeviceName}";
+                $"Input 2: Capturing - {session.ProcessName} (PID {session.ProcessId})";
         }
         catch (Exception ex)
         {
             _audioMixer.RemoveInput(
                 Input2MixerId);
 
-            _input2Capture.Stop();
+            try
+            {
+                await _input2Capture.StopAsync();
+            }
+            catch
+            {
+            }
 
             StopMonitorIfIdle();
 
@@ -364,13 +433,18 @@ public partial class MainWindow : Window
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
         }
+        finally
+        {
+            StartInput2Button.IsEnabled =
+                true;
+        }
     }
 
-    private void StopInput2Button_Click(
+    private async void StopInput2Button_Click(
         object sender,
         RoutedEventArgs e)
     {
-        StopInput2();
+        await StopInput2Async();
     }
 
     private void Input2Capture_AudioReceived(
@@ -379,17 +453,20 @@ public partial class MainWindow : Window
     {
         Dispatcher.Invoke(() =>
         {
+            string processName =
+                App.SettingsManager.Settings.Audio.RoutingApplication2;
+
             Input2StatusText.Text =
-                $"Input 2: Receiving audio - {_input2Capture.DeviceName}";
+                $"Input 2: Receiving audio - {processName}";
         });
     }
 
-    private void StopInput2()
+    private async Task StopInput2Async()
     {
         _audioMixer.RemoveInput(
             Input2MixerId);
 
-        _input2Capture.Stop();
+        await _input2Capture.StopAsync();
 
         Input2StatusText.Text =
             "Input 2: Stopped";
@@ -745,20 +822,47 @@ public partial class MainWindow : Window
     // MONITOR
     // ------------------------------------------------------------
 
+    private const string LocalMonitorOutputId =
+        "local-monitor";
+
     private void EnsureMonitorRunning()
     {
         var settings =
             App.SettingsManager.Settings.Audio;
 
         if (!settings.MonitorEnabled)
+        {
+            if (_localMonitor.IsRunning)
+            {
+                _localMonitor.Stop();
+            }
+
+            _audioPump.RemoveOutput(
+                LocalMonitorOutputId);
+
             return;
+        }
 
         if (_localMonitor.IsRunning)
             return;
 
-        _localMonitor.Start(
-            _audioMixer.GetMixedOutput(),
-            settings.MonitorDevice);
+        ISampleProvider monitorSource =
+            _audioPump.AddOrReplaceOutput(
+                LocalMonitorOutputId);
+
+        try
+        {
+            _localMonitor.Start(
+                monitorSource,
+                settings.MonitorDevice);
+        }
+        catch
+        {
+            _audioPump.RemoveOutput(
+                LocalMonitorOutputId);
+
+            throw;
+        }
     }
 
     private void StopMonitorIfIdle()
@@ -776,6 +880,9 @@ public partial class MainWindow : Window
             return;
 
         _localMonitor.Stop();
+
+        _audioPump.RemoveOutput(
+            LocalMonitorOutputId);
     }
 
     // ------------------------------------------------------------
@@ -796,7 +903,7 @@ public partial class MainWindow : Window
 
         try
         {
-            StopInput2();
+            await StopInput2Async();
         }
         catch
         {
@@ -989,7 +1096,19 @@ public partial class MainWindow : Window
 
             try
             {
-                _input2Capture.Stop();
+                Task stopInput2Task =
+                    _input2Capture.StopAsync();
+
+                Task completedTask =
+                    await Task.WhenAny(
+                        stopInput2Task,
+                        Task.Delay(
+                            ShutdownTimeout));
+
+                if (completedTask == stopInput2Task)
+                {
+                    await stopInput2Task;
+                }
             }
             catch
             {
@@ -1045,7 +1164,7 @@ public partial class MainWindow : Window
 
             try
             {
-                _input2Capture.Dispose();
+                await _input2Capture.DisposeAsync();
             }
             catch
             {
@@ -1070,6 +1189,14 @@ public partial class MainWindow : Window
             try
             {
                 _localMonitor.Dispose();
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                await _audioPump.StopAsync();
             }
             catch
             {
@@ -1124,3 +1251,5 @@ public partial class MainWindow : Window
         App.SettingsManager.Save();
     }
 }
+
+

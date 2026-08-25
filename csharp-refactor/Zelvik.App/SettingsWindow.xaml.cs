@@ -1,12 +1,15 @@
-using System.Windows;
+﻿using System.Windows;
 using Zelvik.Audio;
 
 namespace Zelvik.App;
 
 public partial class SettingsWindow : Window
 {
-    private readonly AudioDeviceService _audioDeviceService = new();
-    private readonly AudioSessionService _audioSessionService = new();
+    private readonly AudioDeviceService _audioDeviceService =
+        new();
+
+    private readonly AudioSessionService _audioSessionService =
+        new();
 
     public SettingsWindow()
     {
@@ -27,6 +30,12 @@ public partial class SettingsWindow : Window
 
         YouTubeApiKeyPasswordBox.Password =
             settings.YouTube.ApiKey;
+
+        Routing1EnabledCheckBox.IsChecked =
+            settings.Audio.Routing1Enabled;
+
+        Routing2EnabledCheckBox.IsChecked =
+            settings.Audio.Routing2Enabled;
 
         MonitorRoutingCheckBox.IsChecked =
             settings.Audio.MonitorEnabled;
@@ -214,6 +223,12 @@ public partial class SettingsWindow : Window
             RoutingApplication2ComboBox.SelectedValue
                 as string
             ?? string.Empty;
+
+        settings.Audio.Routing1Enabled =
+            Routing1EnabledCheckBox.IsChecked == true;
+
+        settings.Audio.Routing2Enabled =
+            Routing2EnabledCheckBox.IsChecked == true;
 
         settings.Audio.MonitorDevice =
             (RoutingOutputDeviceComboBox.SelectedItem
