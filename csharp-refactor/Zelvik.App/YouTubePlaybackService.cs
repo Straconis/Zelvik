@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using NAudio.Wave;
 using Zelvik.Audio;
 using Zelvik.YouTube;
@@ -8,6 +8,23 @@ namespace Zelvik.App;
 public sealed class YouTubePlaybackService :
     IAsyncDisposable
 {
+    /*
+     * Match the retry behavior from the original
+     * Python Zelvik implementation.
+     *
+     * This is the number of retries AFTER the
+     * initial attempt.
+     *
+     * Total possible attempts:
+     *
+     *     initial + 3 retries = 4 attempts
+     */
+    private const int MaxDownloadRetries =
+        3;
+
+    private static readonly TimeSpan DownloadRetryDelay =
+        TimeSpan.FromSeconds(1.5);
+
     private readonly YtDlpMediaFileService _mediaFileService;
     private readonly FfmpegAudioSource _ffmpegAudioSource;
 
@@ -34,7 +51,20 @@ public sealed class YouTubePlaybackService :
         _ffmpegAudioSource.SampleProvider;
 
     public event EventHandler? AudioReceived;
+
     public event EventHandler? PlaybackEnded;
+
+    /*
+     * Allows the UI to report:
+     *
+     *     YouTube: Download failed — retrying 1/3...
+     *
+     * We don't have to consume this event immediately,
+     * but exposing it here keeps retry behavior in the
+     * playback layer instead of coupling it to MainWindow.
+     */
+    public event EventHandler<YouTubeRetryEventArgs>?
+        DownloadRetrying;
 
     public YouTubePlaybackService(
         string? ytDlpPath = null,
@@ -71,12 +101,12 @@ public sealed class YouTubePlaybackService :
         /*
          * Stop the previous FFmpeg process.
          *
-         * IMPORTANT:
-         *
-         * StopAsync no longer deletes the media file.
-         * It remains available in the YouTube cache.
+         * StopAsync intentionally does NOT remove cached
+         * media from disk.
          */
         await StopAsync();
+
+        cancellationToken.ThrowIfCancellationRequested();
 
         _stopping =
             false;
@@ -84,7 +114,10 @@ public sealed class YouTubePlaybackService :
         /*
          * Development authentication bridge.
          *
-         * Later this will be replaced by automatic cookie
+         * For now Zelvik can use the cookie file supplied by
+         * ZELVIK_TEST_COOKIE_FILE.
+         *
+         * Later this can be replaced by automatic cookie
          * generation from Zelvik's WebView2 login session.
          */
         if (string.IsNullOrWhiteSpace(
@@ -106,18 +139,17 @@ public sealed class YouTubePlaybackService :
         }
 
         /*
-         * DownloadAudioAsync now performs a cache lookup first.
+         * Cache lookup + resilient download.
          *
-         * Cache hit:
+         * A cache hit should return successfully on the first
+         * attempt without touching YouTube.
          *
-         *     returns immediately
-         *
-         * Cache miss:
-         *
-         *     downloads through yt-dlp and stores the result
+         * A cache miss may encounter transient YouTube errors
+         * such as HTTP 403. Those are retried using the same
+         * strategy as the Python Zelvik implementation.
          */
         YtDlpMediaFileResult media =
-            await _mediaFileService.DownloadAudioAsync(
+            await DownloadWithRetryAsync(
                 videoUrl,
                 cookieFile,
                 cancellationToken);
@@ -151,14 +183,234 @@ public sealed class YouTubePlaybackService :
         catch
         {
             /*
-             * Do NOT delete the cached media here.
+             * Do NOT delete the cached media.
              *
-             * If FFmpeg has a problem, keeping the file makes
-             * diagnostics possible and prevents unnecessary
-             * redownloads while debugging.
+             * Keeping failed media makes diagnostics possible
+             * and avoids unnecessary redownloads.
              */
             throw;
         }
+    }
+
+    private async Task<YtDlpMediaFileResult>
+        DownloadWithRetryAsync(
+            string videoUrl,
+            string? cookieFile,
+            CancellationToken cancellationToken)
+    {
+        int retryCount =
+            0;
+
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            YtDlpMediaFileResult media =
+                await _mediaFileService.DownloadAudioAsync(
+                    videoUrl,
+                    cookieFile,
+                    cancellationToken);
+
+            if (media.Success)
+            {
+                return media;
+            }
+
+            bool retryable =
+                IsRetryableDownloadFailure(
+                    media);
+
+            if (!retryable
+                ||
+                retryCount >= MaxDownloadRetries)
+            {
+                return media;
+            }
+
+            retryCount++;
+
+            DownloadRetrying?.Invoke(
+                this,
+                new YouTubeRetryEventArgs(
+                    retryCount,
+                    MaxDownloadRetries,
+                    GetRetryReason(
+                        media)));
+
+            await Task.Delay(
+                DownloadRetryDelay,
+                cancellationToken);
+        }
+    }
+
+    private static bool IsRetryableDownloadFailure(
+        YtDlpMediaFileResult media)
+    {
+        string details =
+            string.Join(
+                "\n",
+                media.StandardOutput
+                    ?? string.Empty,
+                media.StandardError
+                    ?? string.Empty)
+            .ToLowerInvariant();
+
+        /*
+         * Permanent/unavailable failures should not be
+         * hammered repeatedly.
+         */
+        string[] permanentTerms =
+        {
+            "video unavailable",
+            "this video is unavailable",
+            "private video",
+            "video is private",
+            "removed by the uploader",
+            "has been removed",
+            "copyright",
+            "this video is not available"
+        };
+
+        foreach (string term in permanentTerms)
+        {
+            if (details.Contains(
+                    term,
+                    StringComparison.Ordinal))
+            {
+                return false;
+            }
+        }
+
+        /*
+         * Authentication failures are not fixed by immediately
+         * repeating the exact same request.
+         *
+         * If cookies have already been supplied, retrying a
+         * genuine login-required response just wastes time.
+         */
+        string[] authenticationTerms =
+        {
+            "sign in to confirm",
+            "login required",
+            "log in to confirm",
+            "authentication required",
+            "confirm your age",
+            "age-restricted",
+            "age restricted"
+        };
+
+        foreach (string term in authenticationTerms)
+        {
+            if (details.Contains(
+                    term,
+                    StringComparison.Ordinal))
+            {
+                return false;
+            }
+        }
+
+        /*
+         * The important transient cases from Python Zelvik.
+         */
+        string[] retryableTerms =
+        {
+            "http error 403",
+            "403 forbidden",
+            "forbidden",
+            "access denied",
+
+            "requested format is not available",
+
+            "http error 429",
+            "too many requests",
+
+            "http error 500",
+            "http error 502",
+            "http error 503",
+            "http error 504",
+
+            "timed out",
+            "timeout",
+            "connection reset",
+            "connection refused",
+            "temporary failure",
+            "temporarily unavailable",
+            "network is unreachable"
+        };
+
+        foreach (string term in retryableTerms)
+        {
+            if (details.Contains(
+                    term,
+                    StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        /*
+         * Unknown yt-dlp failures stay non-retryable.
+         *
+         * We don't want Zelvik blindly retrying malformed URLs,
+         * unsupported sites, configuration errors, etc.
+         */
+        return false;
+    }
+
+    private static string GetRetryReason(
+        YtDlpMediaFileResult media)
+    {
+        string details =
+            string.Join(
+                "\n",
+                media.StandardOutput
+                    ?? string.Empty,
+                media.StandardError
+                    ?? string.Empty)
+            .ToLowerInvariant();
+
+        if (details.Contains("403")
+            ||
+            details.Contains("forbidden")
+            ||
+            details.Contains("access denied"))
+        {
+            return "YouTube returned HTTP 403 Forbidden.";
+        }
+
+        if (details.Contains(
+                "requested format is not available"))
+        {
+            return "The selected YouTube format was temporarily unavailable.";
+        }
+
+        if (details.Contains("429")
+            ||
+            details.Contains("too many requests"))
+        {
+            return "YouTube temporarily rate-limited the request.";
+        }
+
+        if (details.Contains("timeout")
+            ||
+            details.Contains("timed out"))
+        {
+            return "The YouTube request timed out.";
+        }
+
+        if (details.Contains(
+                "connection reset"))
+        {
+            return "The network connection was reset.";
+        }
+
+        if (details.Contains(
+                "temporarily unavailable"))
+        {
+            return "YouTube temporarily reported the media unavailable.";
+        }
+
+        return "A temporary YouTube download error occurred.";
     }
 
     public async Task StopAsync()
@@ -236,5 +488,30 @@ public sealed class YouTubePlaybackService :
          * Closing Zelvik should not cause the next launch to
          * redownload everything.
          */
+    }
+}
+
+public sealed class YouTubeRetryEventArgs :
+    EventArgs
+{
+    public int RetryNumber { get; }
+
+    public int MaximumRetries { get; }
+
+    public string Reason { get; }
+
+    public YouTubeRetryEventArgs(
+        int retryNumber,
+        int maximumRetries,
+        string reason)
+    {
+        RetryNumber =
+            retryNumber;
+
+        MaximumRetries =
+            maximumRetries;
+
+        Reason =
+            reason;
     }
 }
