@@ -33,3 +33,6 @@ youtube-cookies-*.txt
 
 # Native C++ build output
 Zelvik.Native/build/
+
+# Local test credential loader
+Load-TestSecrets.ps1
