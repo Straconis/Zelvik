@@ -20,4 +20,9 @@
   <ItemGroup>
     <Resource Include="Assets\zelvik.ico" />
   </ItemGroup>
+  <ItemGroup>
+    <Content Include="Assets\DiscordSetup\*.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
 </Project>

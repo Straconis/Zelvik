@@ -1,24 +1,24 @@
-﻿<Window x:Class="Zelvik.App.DiscordSetupWizard"
+<Window x:Class="Zelvik.App.DiscordSetupWizard"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Zelvik Discord Setup Wizard"
-        Width="960"
-        Height="760"
-        MinWidth="760"
+        Title="Zelvik - Guided Discord Setup"
+        Width="940"
+        Height="720"
+        MinWidth="800"
         MinHeight="620"
         WindowStartupLocation="CenterOwner"
         Background="{DynamicResource WindowBackgroundBrush}"
         Foreground="{DynamicResource PrimaryTextBrush}">
 
-    <Grid Margin="24">
+    <Grid Margin="20">
 
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
+
+        <!-- Header -->
 
         <StackPanel Grid.Row="0"
                     Margin="0,0,0,12">
@@ -33,48 +33,172 @@
 
         </StackPanel>
 
-        <TextBlock x:Name="InstructionText"
-                   Grid.Row="1"
-                   Margin="0,0,0,14"
-                   FontSize="15"
-                   TextWrapping="Wrap"/>
+        <!-- Content -->
 
-        <Border Grid.Row="2"
-                BorderThickness="1"
-                Padding="8"
-                Margin="0,0,0,14">
+        <Grid Grid.Row="1">
 
-            <ScrollViewer HorizontalScrollBarVisibility="Auto"
-                          VerticalScrollBarVisibility="Auto">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
 
-                <Image x:Name="StepImage"
-                       Stretch="Uniform"/>
+            <!-- Step title and instructions -->
 
-            </ScrollViewer>
+            <StackPanel Grid.Row="0"
+                        Margin="0,0,0,10">
 
-        </Border>
+                <TextBlock x:Name="TitleText"
+                           FontSize="22"
+                           FontWeight="SemiBold"
+                           TextWrapping="Wrap"/>
 
-        <StackPanel x:Name="TokenPanel"
-                    Grid.Row="3"
-                    Visibility="Collapsed"
-                    Margin="0,0,0,14">
+                <TextBlock x:Name="InstructionText"
+                           Margin="0,6,0,0"
+                           FontSize="15"
+                           TextWrapping="Wrap"/>
 
-            <TextBlock Text="Discord Bot Token"
-                       FontWeight="SemiBold"
-                       Margin="0,0,0,6"/>
+            </StackPanel>
 
-            <PasswordBox x:Name="BotTokenPasswordBox"
-                         MinWidth="400"
-                         HorizontalAlignment="Left"/>
+            <!-- Step-specific content -->
 
-            <TextBlock Text="Paste the bot token you copied from the Discord Developer Portal. Zelvik will place it in Settings when you finish the wizard."
-                       Margin="0,6,0,0"
-                       Opacity="0.7"
-                       TextWrapping="Wrap"/>
+            <Grid Grid.Row="1">
 
-        </StackPanel>
+                <!-- Screenshot steps -->
 
-        <Grid Grid.Row="4">
+                <Border x:Name="StepImageBorder"
+                        BorderThickness="1"
+                        Padding="8"
+                        Visibility="Collapsed">
+
+                    <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                                  VerticalScrollBarVisibility="Auto">
+
+                        <Image x:Name="StepImage"
+                               Stretch="Uniform"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"/>
+
+                    </ScrollViewer>
+
+                </Border>
+
+                <!-- Token step -->
+
+                <StackPanel x:Name="TokenPanel"
+                            Visibility="Collapsed">
+
+                    <TextBlock Text="Discord Bot Token"
+                               FontWeight="SemiBold"
+                               Margin="0,0,0,6"/>
+
+                    <Grid>
+
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <PasswordBox x:Name="BotTokenPasswordBox"
+                                     Grid.Column="0"
+                                     MinWidth="400"
+                                     VerticalContentAlignment="Center"/>
+
+                        <TextBox x:Name="BotTokenTextBox"
+                                 Grid.Column="0"
+                                 MinWidth="400"
+                                 Visibility="Collapsed"
+                                 VerticalContentAlignment="Center"/>
+
+                        <Button x:Name="PasteTokenButton"
+                                Grid.Column="1"
+                                Content="Paste"
+                                Margin="8,0,0,0"
+                                Padding="14,6"
+                                Click="PasteTokenButton_Click"/>
+
+                    </Grid>
+
+                    <StackPanel Orientation="Horizontal"
+                                Margin="0,8,0,0">
+
+                        <CheckBox x:Name="ShowTokenCheckBox"
+                                  Content="Show token"
+                                  VerticalAlignment="Center"
+                                  Checked="ShowTokenCheckBox_Checked"
+                                  Unchecked="ShowTokenCheckBox_Unchecked"/>
+
+                    </StackPanel>
+
+                    <Button x:Name="TestTokenButton"
+                            Content="Test Connection"
+                            Width="150"
+                            HorizontalAlignment="Left"
+                            Margin="0,12,0,0"
+                            Padding="12,6"
+                            Click="TestTokenButton_Click"/>
+
+                    <Button x:Name="SaveTokenButton"
+                            Content="Save Verified Token"
+                            Width="170"
+                            HorizontalAlignment="Left"
+                            Margin="0,8,0,0"
+                            Padding="12,6"
+                            IsEnabled="False"
+                            Click="SaveTokenButton_Click"/>
+
+                    <TextBlock x:Name="TokenStatusText"
+                               Margin="0,12,0,0"
+                               TextWrapping="Wrap"/>
+
+                    <TextBlock Text="Zelvik stores the token using Windows Credential Manager. The token is not written to Zelvik's settings files."
+                               Margin="0,10,0,0"
+                               Opacity="0.7"
+                               TextWrapping="Wrap"/>
+
+                </StackPanel>
+
+                <!-- Installation step -->
+
+                <StackPanel x:Name="InstallPanel"
+                            Visibility="Collapsed">
+
+                    <Button x:Name="InstallBotButton"
+                            Content="Add Zelvik to a Discord Server"
+                            HorizontalAlignment="Left"
+                            Margin="0,18,0,0"
+                            Padding="14,7"
+                            Click="InstallBotButton_Click"/>
+
+                </StackPanel>
+
+                <!-- Welcome step -->
+
+                <StackPanel x:Name="WelcomePanel"
+                            Visibility="Collapsed">
+
+                    <Button x:Name="OpenDeveloperPortalButton"
+                            Content="Open Discord Developer Portal"
+                            HorizontalAlignment="Left"
+                            Margin="0,18,0,0"
+                            Padding="14,7"
+                            Click="OpenDeveloperPortalButton_Click"/>
+
+                </StackPanel>
+
+                <!-- Completion step -->
+
+                <StackPanel x:Name="FinishPanel"
+                            Visibility="Collapsed">
+
+                </StackPanel>
+
+            </Grid>
+
+        </Grid>
+        <!-- Navigation -->
+
+        <Grid Grid.Row="2"
+              Margin="0,14,0,0">
 
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
@@ -82,22 +206,21 @@
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="8"/>
                 <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="8"/>
-                <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
 
-            <Button Grid.Column="0"
-                    Content="Cancel"
-                    MinWidth="90"
-                    Padding="14,7"
-                    Click="CancelButton_Click"/>
-
             <Button x:Name="BackButton"
-                    Grid.Column="2"
+                    Grid.Column="0"
                     Content="Back"
                     MinWidth="90"
                     Padding="14,7"
                     Click="BackButton_Click"/>
+
+            <Button x:Name="CancelButton"
+                    Grid.Column="2"
+                    Content="Cancel"
+                    MinWidth="90"
+                    Padding="14,7"
+                    Click="CancelButton_Click"/>
 
             <Button x:Name="NextButton"
                     Grid.Column="4"
@@ -106,15 +229,8 @@
                     Padding="14,7"
                     Click="NextButton_Click"/>
 
-            <Button x:Name="FinishButton"
-                    Grid.Column="6"
-                    Content="Finish"
-                    MinWidth="90"
-                    Padding="14,7"
-                    Visibility="Collapsed"
-                    Click="FinishButton_Click"/>
-
         </Grid>
 
     </Grid>
+
 </Window>
