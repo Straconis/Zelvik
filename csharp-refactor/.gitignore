@@ -36,3 +36,6 @@ Zelvik.Native/build/
 
 # Local test credential loader
 Load-TestSecrets.ps1
+
+# External reference repositories
+reference/
